@@ -1,0 +1,6 @@
+# file: requirements.txt
+streamlit
+pandas
+pdfplumber
+openpyxl
+xlrd
