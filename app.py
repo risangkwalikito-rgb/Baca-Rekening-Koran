@@ -503,7 +503,7 @@ def best_matching_column(columns: List[str], aliases: List[str]) -> Optional[str
     for alias in aliases:
         alias_norm = normalize_column_name(alias)
         for original, normalized in normalized_cols.items():
-            if alias_norm in normalized or normalized in alias_norm:
+            if alias_norm and alias_norm in normalized:
                 return original
 
     return None
@@ -511,11 +511,16 @@ def best_matching_column(columns: List[str], aliases: List[str]) -> Optional[str
 
 def map_columns(df: pd.DataFrame) -> Dict[str, str]:
     mapping: Dict[str, str] = {}
+    used_original_columns: set[str] = set()
     columns = list(df.columns)
+
     for canonical, aliases in COLUMN_ALIASES.items():
-        matched = best_matching_column(columns, aliases)
+        candidate_columns = [col for col in columns if col not in used_original_columns]
+        matched = best_matching_column(candidate_columns, aliases)
         if matched:
             mapping[matched] = canonical
+            used_original_columns.add(matched)
+
     return mapping
 
 
