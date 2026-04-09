@@ -130,6 +130,20 @@ DEFAULT_MASTER_TEXT = {
     "BNI": "",
 }
 
+ACTIVE_BANK = "BCA"
+BANK_ACCOUNT_LENGTHS = {
+    "BCA": 10,
+    "Mandiri": 13,
+    "BNI": 10,
+    "Lainnya": 20,
+}
+
+
+def get_account_length(bank_name: Optional[str] = None) -> int:
+    selected = normalize_spaces(bank_name or ACTIVE_BANK)
+    return BANK_ACCOUNT_LENGTHS.get(selected, 20)
+
+
 
 def normalize_spaces(text: object) -> str:
     return re.sub(r"\s+", " ", str(text or "")).strip()
@@ -151,17 +165,18 @@ def clean_account_id(value: object) -> str:
     return raw or "UNKNOWN"
 
 
-def normalize_account_key(value: object, length: int = 10) -> str:
+def normalize_account_key(value: object, length: Optional[int] = None) -> str:
+    effective_length = int(length or get_account_length())
     raw = clean_account_id(value)
     digits = re.sub(r"\D", "", raw)
     if digits:
-        return digits[:length]
+        return digits[:effective_length]
     text = normalize_spaces(raw)
-    return text[:length] if text else "UNKNOWN"
+    return text[:effective_length] if text else "UNKNOWN"
 
 
 def display_account_id(value: object) -> str:
-    return normalize_account_key(value, length=10)
+    return normalize_account_key(value, length=get_account_length())
 
 
 def format_currency(value: object) -> str:
@@ -929,7 +944,10 @@ def finalize_transactions(df: pd.DataFrame, deduplicate: bool) -> pd.DataFrame:
 
 
 def parse_master_accounts(selected_bank: str) -> pd.DataFrame:
-    master_text = DEFAULT_MASTER_TEXT.get(selected_bank, "")
+    if normalize_spaces(selected_bank).upper() != "BCA":
+        return pd.DataFrame(columns=["master_order", "account_id", "bank", "master_name"])
+
+    master_text = DEFAULT_MASTER_TEXT.get("BCA", "")
     rows: List[Dict[str, object]] = []
 
     for line in str(master_text or "").splitlines():
@@ -1468,7 +1486,7 @@ def main() -> None:
 
     with st.sidebar:
         st.subheader("Opsi")
-        selected_bank = st.selectbox("Bank", ["BCA", "Mandiri", "BNI"], index=0)
+        selected_bank = st.selectbox("Bank", ["BCA", "Mandiri", "BNI", "Lainnya"], index=0)
         deduplicate = st.checkbox("Hapus duplikat transaksi identik", value=True)
         st.markdown(
             """
@@ -1479,9 +1497,13 @@ def main() -> None:
 
             **Catatan**
             - parser PDF saat ini paling cocok untuk layout BCA berbasis teks
-            - master rekening default disimpan di code, tidak ditampilkan di UI
+            - master rekening default hanya aktif untuk bank BCA
+            - nomor rekening tampilan: BCA=10 digit, Mandiri=13 digit
             """
         )
+
+    global ACTIVE_BANK
+    ACTIVE_BANK = selected_bank
 
     master_df = parse_master_accounts(selected_bank)
 
