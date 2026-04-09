@@ -98,49 +98,49 @@ COLUMN_ALIASES = {
     ],
 }
 
+
 DEFAULT_MASTER_TEXT = {
-    "BCA": """1	0613419702	BCA	BANK BCA CASHLESS BATAM
-2	4301191191	BCA	BANK BCA PNP BAKAUHENI
-3	8200827831	BCA	BANK BCA CASHLESS SIBOLGA
-4	2950400652	BCA	BANK BCA PNP MERAK
-5	2642537777	BCA	BANK BCA PNP KETAPANG
-6	1870888828	BCA	BANK BCA PNP SURABAYA
-7	7810337154	BCA	BANK BCA CASHLESS BALIKPAPAN
-8	8685126334	BCA	BANK BCA CASHLESS BATULICIN
-9	7855301644	BCA	BANK BCA CASHLESS TERNATE
-10	3141086306	BCA	BANK BCA CASHLESS KUPANG
-11	7255999001	BCA	BANK BCA PNP KAYANGAN
-12	0561743893	BCA	BANK BCA PNP LEMBAR
-13	7065038676	BCA	BANK BCA CASHLESS SAPE
-14	8745194440	BCA	BANK BCA CASHLESS BAJOE
-15	0411613436	BCA	BANK BCA BANGKA
-16	3900925572	BCA	BANK BCA SELAYAR
-17	0441598776	BCA	BANK BCA AMBON
-18	0223259861	BCA	BANK BCA ACEH
-19	0322725645	BCA	BANK BCA PADANG
-20	6795136821	BCA	BANK BCA LUWUK
-21	6495342828	BCA	BANK BCA BAU-BAU
-22	4500553842	BCA	BANK BCA PELABUHAN""",
+    "BCA": """1\t0613419702\tBCA\tBANK BCA CASHLESS BATAM
+2\t4301191191\tBCA\tBANK BCA PNP BAKAUHENI
+3\t8200827831\tBCA\tBANK BCA CASHLESS SIBOLGA
+4\t2950400652\tBCA\tBANK BCA PNP MERAK
+5\t2642537777\tBCA\tBANK BCA PNP KETAPANG
+6\t1870888828\tBCA\tBANK BCA PNP SURABAYA
+7\t7810337154\tBCA\tBANK BCA CASHLESS BALIKPAPAN
+8\t8685126334\tBCA\tBANK BCA CASHLESS BATULICIN
+9\t7855301644\tBCA\tBANK BCA CASHLESS TERNATE
+10\t3141086306\tBCA\tBANK BCA CASHLESS KUPANG
+11\t7255999001\tBCA\tBANK BCA PNP KAYANGAN
+12\t0561743893\tBCA\tBANK BCA PNP LEMBAR
+13\t7065038676\tBCA\tBANK BCA CASHLESS SAPE
+14\t8745194440\tBCA\tBANK BCA CASHLESS BAJOE
+15\t0411613436\tBCA\tBANK BCA BANGKA
+16\t3900925572\tBCA\tBANK BCA SELAYAR
+17\t0441598776\tBCA\tBANK BCA AMBON
+18\t0223259861\tBCA\tBANK BCA ACEH
+19\t0322725645\tBCA\tBANK BCA PADANG
+20\t6795136821\tBCA\tBANK BCA LUWUK
+21\t6495342828\tBCA\tBANK BCA BAU-BAU
+22\t4500553842\tBCA\tBANK BCA PELABUHAN""",
     "Mandiri": "",
     "BNI": "",
 }
 
 
-def normalize_spaces(text: str) -> str:
+def normalize_spaces(text: object) -> str:
     return re.sub(r"\s+", " ", str(text or "")).strip()
 
 
-def normalize_column_name(name: str) -> str:
-    name = str(name or "").strip().lower()
-    name = re.sub(r"[\r\n\t]+", " ", name)
-    name = re.sub(r"[_\-]+", " ", name)
-    name = re.sub(r"[^\w\s/\.]", " ", name)
-    name = re.sub(r"\s+", " ", name).strip()
-    return name
+def normalize_column_name(name: object) -> str:
+    text = str(name or "").strip().lower()
+    text = re.sub(r"[\r\n\t]+", " ", text)
+    text = re.sub(r"[_\-]+", " ", text)
+    text = re.sub(r"[^\w\s/\.]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def clean_account_id(value: object) -> str:
-    raw = normalize_spaces(str(value or ""))
+    raw = normalize_spaces(value)
     digits = re.sub(r"\D", "", raw)
     if len(digits) >= 5:
         return digits
@@ -148,19 +148,16 @@ def clean_account_id(value: object) -> str:
 
 
 def normalize_account_key(value: object, length: int = 10) -> str:
-    cleaned = clean_account_id(value)
-    digits = re.sub(r"\D", "", str(cleaned))
+    raw = clean_account_id(value)
+    digits = re.sub(r"\D", "", raw)
     if digits:
-        return digits[:length] if len(digits) >= length else digits
-
-    raw = normalize_spaces(str(cleaned or ""))
-    if not raw:
-        return "UNKNOWN"
-    return raw[:length]
+        return digits[:length]
+    text = normalize_spaces(raw)
+    return text[:length] if text else "UNKNOWN"
 
 
 def display_account_id(value: object) -> str:
-    return normalize_account_key(value)
+    return normalize_account_key(value, length=10)
 
 
 def format_currency(value: object) -> str:
@@ -234,7 +231,7 @@ def parse_date_value(value: object, year_hint: Optional[int] = None) -> pd.Times
     if isinstance(value, pd.Timestamp):
         return value.normalize()
 
-    text = normalize_spaces(str(value))
+    text = normalize_spaces(value)
     if not text:
         return pd.NaT
 
@@ -321,8 +318,7 @@ def extract_pdf_text(file_bytes: bytes) -> str:
     texts: List[str] = []
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
-            page_text = page.extract_text(x_tolerance=2, y_tolerance=3) or ""
-            texts.append(page_text)
+            texts.append(page.extract_text(x_tolerance=2, y_tolerance=3) or "")
     return "\n".join(texts)
 
 
@@ -339,9 +335,8 @@ def merge_transaction_lines(lines: List[str]) -> List[str]:
             if current:
                 merged.append(current)
             current = line
-        else:
-            if current:
-                current = f"{current} {line}"
+        elif current:
+            current = f"{current} {line}"
 
     if current:
         merged.append(current)
@@ -358,16 +353,10 @@ def detect_dc_marker(body: str, amount_span: Tuple[int, int]) -> Optional[str]:
     if re.search(r"\b(?:CR|KREDIT|CREDIT|K)\b", context, flags=re.IGNORECASE):
         return "CR"
 
-    between_tail = body[end:]
-    if re.search(r"^\s*(?:DB|DEBIT|DEBET|D)\b", between_tail, flags=re.IGNORECASE):
+    tail = body[end:]
+    if re.search(r"^\s*(?:DB|DEBIT|DEBET|D)\b", tail, flags=re.IGNORECASE):
         return "DB"
-    if re.search(r"^\s*(?:CR|KREDIT|CREDIT|K)\b", between_tail, flags=re.IGNORECASE):
-        return "CR"
-
-    before = body[:start]
-    if re.search(r"\b(?:DB|DEBIT|DEBET|D)\s*$", before, flags=re.IGNORECASE):
-        return "DB"
-    if re.search(r"\b(?:CR|KREDIT|CREDIT|K)\s*$", before, flags=re.IGNORECASE):
+    if re.search(r"^\s*(?:CR|KREDIT|CREDIT|K)\b", tail, flags=re.IGNORECASE):
         return "CR"
 
     return None
@@ -406,14 +395,9 @@ def parse_pdf_transaction_line(
         return None
 
     dc_marker = detect_dc_marker(body, (amount_match.start(), amount_match.end()))
-    description = body[: amount_match.start()].strip()
-    description = re.sub(
-        r"\b(?:DB|CR|DEBIT|DEBET|KREDIT|CREDIT|D|K)\s*$",
-        "",
-        description,
-        flags=re.IGNORECASE,
-    )
-    description = normalize_spaces(description) or "(tanpa keterangan)"
+    description = normalize_spaces(body[: amount_match.start()].strip())
+    if not description:
+        description = "(tanpa keterangan)"
 
     debit = 0.0
     credit = 0.0
@@ -444,48 +428,45 @@ def infer_missing_debit_credit(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
 
-    df = df.sort_values(["trx_date", "row_order"], kind="stable").copy()
-    first_opening = df["opening_balance_explicit"].dropna()
+    result = df.sort_values(["trx_date", "row_order"], kind="stable").copy()
+    first_opening = result["opening_balance_explicit"].dropna()
     previous_balance = float(first_opening.iloc[0]) if not first_opening.empty else None
 
-    for idx, row in df.iterrows():
-        current_debit = float(row.get("debit", 0) or 0)
-        current_credit = float(row.get("credit", 0) or 0)
-        current_balance = row.get("balance")
-        current_amount = row.get("amount")
+    for idx, row in result.iterrows():
+        debit = float(row.get("debit", 0) or 0)
+        credit = float(row.get("credit", 0) or 0)
+        balance = row.get("balance")
+        amount = row.get("amount")
 
-        if current_debit > 0 or current_credit > 0:
-            if pd.notna(current_balance):
-                previous_balance = float(current_balance)
+        if debit > 0 or credit > 0:
+            if pd.notna(balance):
+                previous_balance = float(balance)
             continue
 
-        if pd.notna(current_balance) and previous_balance is not None:
-            delta = float(current_balance) - float(previous_balance)
-            guessed_amount = float(abs(current_amount)) if pd.notna(current_amount) else abs(delta)
-
+        if pd.notna(balance) and previous_balance is not None:
+            delta = float(balance) - float(previous_balance)
+            guessed = float(abs(amount)) if pd.notna(amount) else abs(delta)
             if delta > 0:
-                df.at[idx, "credit"] = guessed_amount
-                df.at[idx, "debit"] = 0.0
+                result.at[idx, "credit"] = guessed
+                result.at[idx, "debit"] = 0.0
             elif delta < 0:
-                df.at[idx, "debit"] = guessed_amount
-                df.at[idx, "credit"] = 0.0
-
-            previous_balance = float(current_balance)
-        elif pd.notna(current_amount):
+                result.at[idx, "debit"] = guessed
+                result.at[idx, "credit"] = 0.0
+            previous_balance = float(balance)
+        elif pd.notna(amount):
             marker = str(row.get("dc_raw", "")).upper()
             if marker == "CR":
-                df.at[idx, "credit"] = float(abs(current_amount))
-                df.at[idx, "debit"] = 0.0
+                result.at[idx, "credit"] = float(abs(amount))
+                result.at[idx, "debit"] = 0.0
             elif marker == "DB":
-                df.at[idx, "debit"] = float(abs(current_amount))
-                df.at[idx, "credit"] = 0.0
+                result.at[idx, "debit"] = float(abs(amount))
+                result.at[idx, "credit"] = 0.0
+            if pd.notna(balance):
+                previous_balance = float(balance)
+        elif pd.notna(balance):
+            previous_balance = float(balance)
 
-            if pd.notna(current_balance):
-                previous_balance = float(current_balance)
-        elif pd.notna(current_balance):
-            previous_balance = float(current_balance)
-
-    return df
+    return result
 
 
 def read_csv_with_fallbacks(file_bytes: bytes) -> pd.DataFrame:
@@ -522,17 +503,15 @@ def best_matching_column(columns: List[str], aliases: List[str]) -> Optional[str
 def map_columns(df: pd.DataFrame) -> Dict[str, str]:
     mapping: Dict[str, str] = {}
     columns = list(df.columns)
-
     for canonical, aliases in COLUMN_ALIASES.items():
         matched = best_matching_column(columns, aliases)
         if matched:
             mapping[matched] = canonical
-
     return mapping
 
 
 def standardize_dc(value: object) -> str:
-    text = normalize_spaces(str(value or "")).upper()
+    text = normalize_spaces(value).upper()
     if text in {"DB", "DEBIT", "DEBET", "D"}:
         return "DB"
     if text in {"CR", "CREDIT", "KREDIT", "K"}:
@@ -542,7 +521,7 @@ def standardize_dc(value: object) -> str:
 
 def first_non_empty(series: pd.Series) -> str:
     for value in series:
-        text = normalize_spaces(str(value or ""))
+        text = normalize_spaces(value)
         if text:
             return text
     return ""
@@ -557,16 +536,9 @@ def create_manifest_row(
     parse_note: str,
     transaction_count: int,
 ) -> Dict[str, object]:
-    normalized_account_id = normalize_spaces(str(account_id or ""))
-    if not normalized_account_id:
-        fallback = Path(source_file).stem
-        if source_sheet and source_sheet.upper() != "PDF":
-            normalized_account_id = f"UNKNOWN::{fallback}::{source_sheet}"
-        else:
-            normalized_account_id = f"UNKNOWN::{fallback}"
-
+    account_key = normalize_account_key(account_id)
     return {
-        "account_id": normalized_account_id,
+        "account_id": account_key,
         "account_name": normalize_spaces(account_name),
         "source_file": source_file,
         "source_sheet": source_sheet,
@@ -576,11 +548,7 @@ def create_manifest_row(
     }
 
 
-def build_manifest_from_transactions(
-    parsed_df: pd.DataFrame,
-    filename: str,
-    sheet_name: str,
-) -> pd.DataFrame:
+def build_manifest_from_transactions(parsed_df: pd.DataFrame, filename: str, sheet_name: str) -> pd.DataFrame:
     if parsed_df.empty:
         return pd.DataFrame(
             columns=[
@@ -595,9 +563,7 @@ def build_manifest_from_transactions(
         )
 
     rows: List[Dict[str, object]] = []
-    grouped = parsed_df.groupby("account_id", dropna=False, sort=True)
-
-    for account_id, group in grouped:
+    for account_id, group in parsed_df.groupby("account_id", dropna=False, sort=True):
         rows.append(
             create_manifest_row(
                 account_id=str(account_id),
@@ -609,20 +575,13 @@ def build_manifest_from_transactions(
                 transaction_count=len(group),
             )
         )
-
     return pd.DataFrame(rows)
 
 
-def extract_account_hints_from_dataframe(
-    raw_df: pd.DataFrame,
-    filename: str,
-    sheet_name: str,
-) -> List[Dict[str, str]]:
-    df = raw_df.copy()
-    df = df.dropna(axis=0, how="all").dropna(axis=1, how="all")
-
+def extract_account_hints_from_dataframe(raw_df: pd.DataFrame, filename: str, sheet_name: str) -> List[Dict[str, str]]:
+    df = raw_df.copy().dropna(axis=0, how="all").dropna(axis=1, how="all")
     if df.empty:
-        return [{"account_id": f"UNKNOWN::{Path(filename).stem}::{sheet_name}", "account_name": ""}]
+        return [{"account_id": f"UNKNOWN_{Path(filename).stem}_{sheet_name}", "account_name": ""}]
 
     mapping = map_columns(df)
     df = df.rename(columns=mapping)
@@ -630,48 +589,28 @@ def extract_account_hints_from_dataframe(
     if "account_id" in df.columns:
         temp = df.copy()
         temp["account_id"] = temp["account_id"].fillna("").astype(str).apply(normalize_spaces)
-        temp["account_name"] = (
-            temp["account_name"].fillna("").astype(str).apply(normalize_spaces)
-            if "account_name" in temp.columns
-            else ""
-        )
+        if "account_name" in temp.columns:
+            temp["account_name"] = temp["account_name"].fillna("").astype(str).apply(normalize_spaces)
+        else:
+            temp["account_name"] = ""
 
-        unique_ids = []
+        rows: List[Dict[str, str]] = []
         seen = set()
         for _, row in temp.iterrows():
-            acc = normalize_spaces(row["account_id"])
-            if not acc:
+            account_key = normalize_account_key(row["account_id"])
+            if not account_key or account_key in seen or account_key == "UNKNOWN":
                 continue
+            seen.add(account_key)
+            rows.append({"account_id": account_key, "account_name": normalize_spaces(row["account_name"])})
+        if rows:
+            return rows
 
-            acc_clean = clean_account_id(acc)
-            if acc_clean in seen:
-                continue
-
-            seen.add(acc_clean)
-            unique_ids.append({"account_id": acc_clean, "account_name": normalize_spaces(row.get("account_name", ""))})
-
-        if unique_ids:
-            return unique_ids
-
-    flat_values = (
-        df.astype(str)
-        .replace("nan", "", regex=False)
-        .replace("None", "", regex=False)
-        .values
-        .flatten()
-        .tolist()
-    )
-
-    for value in flat_values:
-        text = normalize_spaces(value)
-        if not text:
-            continue
-
-        match = re.search(r"(?<!\d)(\d{8,20})(?!\d)", text)
+    for value in df.astype(str).fillna("").values.flatten().tolist():
+        match = re.search(r"(?<!\d)(\d{8,20})(?!\d)", normalize_spaces(value))
         if match:
-            return [{"account_id": clean_account_id(match.group(1)), "account_name": ""}]
+            return [{"account_id": normalize_account_key(match.group(1)), "account_name": ""}]
 
-    return [{"account_id": f"UNKNOWN::{Path(filename).stem}::{sheet_name}", "account_name": ""}]
+    return [{"account_id": f"UNKNOWN_{Path(filename).stem}_{sheet_name}", "account_name": ""}]
 
 
 def convert_spreadsheet_to_transactions(
@@ -680,9 +619,7 @@ def convert_spreadsheet_to_transactions(
     sheet_name: str,
 ) -> Tuple[pd.DataFrame, List[str]]:
     notes: List[str] = []
-    df = raw_df.copy()
-
-    df = df.dropna(axis=0, how="all").dropna(axis=1, how="all")
+    df = raw_df.copy().dropna(axis=0, how="all").dropna(axis=1, how="all")
     if df.empty:
         return pd.DataFrame(), [f"{filename} [{sheet_name}]: sheet kosong"]
 
@@ -692,33 +629,20 @@ def convert_spreadsheet_to_transactions(
     if "trx_date" not in df.columns:
         return pd.DataFrame(), [f"{filename} [{sheet_name}]: kolom tanggal tidak ditemukan"]
 
-    if "description" not in df.columns:
-        df["description"] = ""
-
-    if "account_id" not in df.columns:
-        fallback_account = sheet_name if sheet_name.lower() != "sheet1" else Path(filename).stem
-        df["account_id"] = fallback_account
-
-    if "account_name" not in df.columns:
-        df["account_name"] = ""
-
-    if "opening_balance_explicit" not in df.columns:
-        df["opening_balance_explicit"] = None
-
-    if "debit" not in df.columns:
-        df["debit"] = None
-
-    if "credit" not in df.columns:
-        df["credit"] = None
-
-    if "balance" not in df.columns:
-        df["balance"] = None
-
-    if "amount" not in df.columns:
-        df["amount"] = None
-
-    if "dc" not in df.columns:
-        df["dc"] = ""
+    optional_defaults = {
+        "description": "",
+        "account_id": Path(filename).stem,
+        "account_name": "",
+        "opening_balance_explicit": None,
+        "debit": None,
+        "credit": None,
+        "balance": None,
+        "amount": None,
+        "dc": "",
+    }
+    for col, default in optional_defaults.items():
+        if col not in df.columns:
+            df[col] = default
 
     df["trx_date"] = df["trx_date"].apply(parse_date_value)
     df["description"] = df["description"].fillna("").astype(str).apply(normalize_spaces)
@@ -734,23 +658,17 @@ def convert_spreadsheet_to_transactions(
     if df["amount"].notna().any():
         for idx, row in df.iterrows():
             amount = row["amount"]
-            debit = row["debit"]
-            credit = row["credit"]
-            dc = row["dc"]
-
             if pd.isna(amount):
                 continue
 
-            if pd.isna(debit):
-                debit = 0.0
-            if pd.isna(credit):
-                credit = 0.0
+            debit = row["debit"] if pd.notna(row["debit"]) else 0.0
+            credit = row["credit"] if pd.notna(row["credit"]) else 0.0
 
             if debit == 0 and credit == 0:
-                if dc == "DB" or amount < 0:
+                if row["dc"] == "DB" or amount < 0:
                     df.at[idx, "debit"] = float(abs(amount))
                     df.at[idx, "credit"] = 0.0
-                elif dc == "CR" or amount > 0:
+                elif row["dc"] == "CR" or amount > 0:
                     df.at[idx, "credit"] = float(abs(amount))
                     df.at[idx, "debit"] = 0.0
 
@@ -776,10 +694,6 @@ def convert_spreadsheet_to_transactions(
         "row_order",
         "dc_raw",
     ]
-    for col in required_cols:
-        if col not in df.columns:
-            df[col] = None
-
     df = df[required_cols]
     df = df[df["trx_date"].notna()].copy()
 
@@ -801,7 +715,7 @@ def parse_bca_pdf(file_bytes: bytes, filename: str) -> Tuple[pd.DataFrame, pd.Da
         manifest_df = pd.DataFrame(
             [
                 create_manifest_row(
-                    account_id=f"UNKNOWN::{Path(filename).stem}",
+                    account_id=Path(filename).stem,
                     account_name="",
                     source_file=filename,
                     source_sheet="PDF",
@@ -817,7 +731,7 @@ def parse_bca_pdf(file_bytes: bytes, filename: str) -> Tuple[pd.DataFrame, pd.Da
         manifest_df = pd.DataFrame(
             [
                 create_manifest_row(
-                    account_id=f"UNKNOWN::{Path(filename).stem}",
+                    account_id=Path(filename).stem,
                     account_name="",
                     source_file=filename,
                     source_sheet="PDF",
@@ -834,10 +748,8 @@ def parse_bca_pdf(file_bytes: bytes, filename: str) -> Tuple[pd.DataFrame, pd.Da
     account_name = detect_account_name_from_text(text)
     opening_balance_explicit = detect_opening_balance_from_text(text)
 
-    raw_lines = [line for line in text.splitlines() if line.strip()]
-    merged_lines = merge_transaction_lines(raw_lines)
-
     rows: List[Dict[str, object]] = []
+    merged_lines = merge_transaction_lines([line for line in text.splitlines() if line.strip()])
     for row_order, line in enumerate(merged_lines):
         parsed = parse_pdf_transaction_line(
             line=line,
@@ -867,60 +779,13 @@ def parse_bca_pdf(file_bytes: bytes, filename: str) -> Tuple[pd.DataFrame, pd.Da
         )
         return pd.DataFrame(), manifest_df, [f"{filename}: no rekening terdeteksi, transaksi PDF tidak ditemukan"]
 
-    df = pd.DataFrame(rows)
-    df = infer_missing_debit_credit(df)
-
+    df = infer_missing_debit_credit(pd.DataFrame(rows))
     manifest_df = build_manifest_from_transactions(df, filename, "PDF")
-    notes.append(f"{filename}: PDF terbaca | rekening={account_id} | transaksi={len(df)}")
+    notes.append(f"{filename}: PDF terbaca | rekening={normalize_account_key(account_id)} | transaksi={len(df)}")
     return df, manifest_df, notes
 
 
-def parse_generic_pdf(file_bytes: bytes, filename: str, bank_name: str) -> Tuple[pd.DataFrame, pd.DataFrame, List[str]]:
-    if bank_name.upper() == "BCA":
-        return parse_bca_pdf(file_bytes, filename)
-
-    try:
-        text = extract_pdf_text(file_bytes)
-    except Exception as exc:
-        manifest_df = pd.DataFrame(
-            [
-                create_manifest_row(
-                    account_id=f"UNKNOWN::{Path(filename).stem}",
-                    account_name="",
-                    source_file=filename,
-                    source_sheet="PDF",
-                    parse_status="ERROR",
-                    parse_note=f"Gagal baca PDF: {exc}",
-                    transaction_count=0,
-                )
-            ]
-        )
-        return pd.DataFrame(), manifest_df, [f"{filename}: error baca PDF - {exc}"]
-
-    account_id = detect_account_id_from_text(text, filename) if text.strip() else f"UNKNOWN::{Path(filename).stem}"
-    account_name = detect_account_name_from_text(text) if text.strip() else ""
-
-    manifest_df = pd.DataFrame(
-        [
-            create_manifest_row(
-                account_id=account_id,
-                account_name=account_name,
-                source_file=filename,
-                source_sheet="PDF",
-                parse_status="UNSUPPORTED_PDF",
-                parse_note=f"Parser PDF khusus {bank_name} belum dibuat. Gunakan file Excel/CSV atau tambahkan parser khusus.",
-                transaction_count=0,
-            )
-        ]
-    )
-    return pd.DataFrame(), manifest_df, [f"{filename}: parser PDF khusus {bank_name} belum tersedia"]
-
-
-def parse_tabular_file(
-    file_bytes: bytes,
-    filename: str,
-    ext: str,
-) -> Tuple[pd.DataFrame, pd.DataFrame, List[str]]:
+def parse_tabular_file(file_bytes: bytes, filename: str, ext: str) -> Tuple[pd.DataFrame, pd.DataFrame, List[str]]:
     notes: List[str] = []
     results: List[pd.DataFrame] = []
     manifests: List[pd.DataFrame] = []
@@ -959,7 +824,7 @@ def parse_tabular_file(
                 pd.DataFrame(
                     [
                         create_manifest_row(
-                            account_id=f"UNKNOWN::{Path(filename).stem}",
+                            account_id=Path(filename).stem,
                             account_name="",
                             source_file=filename,
                             source_sheet="WORKBOOK",
@@ -979,8 +844,8 @@ def parse_tabular_file(
                 results.append(parsed_df)
                 manifests.append(build_manifest_from_transactions(parsed_df, filename, str(sheet_name)))
             else:
-                hints = extract_account_hints_from_dataframe(raw_df, filename, str(sheet_name))
                 cleaned = raw_df.dropna(axis=0, how="all").dropna(axis=1, how="all")
+                hints = extract_account_hints_from_dataframe(raw_df, filename, str(sheet_name))
                 status = "EMPTY_SHEET" if cleaned.empty else "NO_TRANSACTION"
                 note = "Sheet kosong" if cleaned.empty else "Sheet terbaca tetapi tidak ada transaksi valid"
 
@@ -1021,7 +886,7 @@ def finalize_transactions(df: pd.DataFrame, deduplicate: bool) -> pd.DataFrame:
         return df
 
     result = df.copy()
-    result["account_id"] = result["account_id"].fillna("UNKNOWN").astype(str).apply(clean_account_id)
+    result["account_id"] = result["account_id"].fillna("").astype(str).apply(normalize_account_key)
     result["account_name"] = result["account_name"].fillna("").astype(str).apply(normalize_spaces)
     result["description"] = result["description"].fillna("").astype(str).apply(normalize_spaces)
     result["debit"] = pd.to_numeric(result["debit"], errors="coerce").fillna(0.0)
@@ -1044,30 +909,8 @@ def finalize_transactions(df: pd.DataFrame, deduplicate: bool) -> pd.DataFrame:
     return result
 
 
-def derive_opening_balance(group: pd.DataFrame) -> float:
-    explicit = group["opening_balance_explicit"].dropna()
-    if not explicit.empty:
-        return float(explicit.iloc[0])
-
-    first_valid_balance_rows = group[group["balance"].notna()]
-    if not first_valid_balance_rows.empty:
-        first = first_valid_balance_rows.iloc[0]
-        return float(first["balance"]) + float(first["debit"]) - float(first["credit"])
-
-    return 0.0
-
-
-def derive_closing_balance(group: pd.DataFrame, opening_balance: float) -> float:
-    valid_balances = group["balance"].dropna()
-    if not valid_balances.empty:
-        return float(valid_balances.iloc[-1])
-
-    total_debit = float(group["debit"].sum())
-    total_credit = float(group["credit"].sum())
-    return opening_balance + total_credit - total_debit
-
-
-def parse_master_accounts(master_text: str, selected_bank: str) -> pd.DataFrame:
+def parse_master_accounts(selected_bank: str) -> pd.DataFrame:
+    master_text = DEFAULT_MASTER_TEXT.get(selected_bank, "")
     rows: List[Dict[str, object]] = []
 
     for line in str(master_text or "").splitlines():
@@ -1078,19 +921,11 @@ def parse_master_accounts(master_text: str, selected_bank: str) -> pd.DataFrame:
         parts = re.split(r"\t+|\s{2,}", line.strip())
         if len(parts) >= 4 and parts[0].isdigit():
             order_str, account_id, bank_name, account_desc = parts[0], parts[1], parts[2], " ".join(parts[3:])
-        elif len(parts) >= 3:
-            order_str, account_id, bank_name, account_desc = str(len(rows) + 1), parts[0], parts[1], " ".join(parts[2:])
         else:
             tokens = clean_line.split(" ", 3)
-            if len(tokens) >= 4 and tokens[0].isdigit():
-                order_str, account_id, bank_name, account_desc = tokens[0], tokens[1], tokens[2], tokens[3]
-            elif len(tokens) >= 3:
-                order_str, account_id, bank_name, account_desc = str(len(rows) + 1), tokens[0], tokens[1], " ".join(tokens[2:])
-            else:
+            if len(tokens) < 4:
                 continue
-
-        if not re.search(r"\d", account_id):
-            continue
+            order_str, account_id, bank_name, account_desc = tokens[0], tokens[1], tokens[2], tokens[3]
 
         rows.append(
             {
@@ -1109,72 +944,73 @@ def parse_master_accounts(master_text: str, selected_bank: str) -> pd.DataFrame:
     return master_df
 
 
-def order_dataframe_by_master(
-    df: pd.DataFrame,
-    master_df: pd.DataFrame,
-    rekening_col: str = "Rekening",
-) -> pd.DataFrame:
-    if df.empty:
-        return df
-
-    result = df.copy()
-    result["_sort_account_id"] = result[rekening_col].astype(str).apply(normalize_account_key)
-
+def resolve_account_name(account_key: str, summary_name: str, manifest_name: str, master_df: pd.DataFrame) -> str:
     if master_df is not None and not master_df.empty:
-        master_work = master_df.copy()
-        master_work["account_key"] = master_work["account_id"].apply(normalize_account_key)
-        master_work = master_work.drop_duplicates(subset=["account_key"], keep="first")
+        matched = master_df.loc[master_df["account_id"] == account_key, "master_name"]
+        if not matched.empty and normalize_spaces(matched.iloc[0]):
+            return normalize_spaces(matched.iloc[0])
 
-        order_map = dict(zip(master_work["account_key"], master_work["master_order"]))
-        result["_master_order"] = result["_sort_account_id"].map(order_map).fillna(999999).astype(int)
+    if normalize_spaces(summary_name):
+        return normalize_spaces(summary_name)
 
-        name_map = dict(zip(master_work["account_key"], master_work["master_name"]))
-        if "Nama Rekening" in result.columns:
-            result["Nama Rekening"] = result.apply(
-                lambda row: normalize_spaces(row["Nama Rekening"]) or name_map.get(row["_sort_account_id"], ""),
-                axis=1,
-            )
+    return normalize_spaces(manifest_name)
 
-        result = result.sort_values(["_master_order", "_sort_account_id"], kind="stable").reset_index(drop=True)
-    else:
-        result = result.sort_values(["_sort_account_id"], kind="stable").reset_index(drop=True)
 
-    result[rekening_col] = result["_sort_account_id"].astype(str).str[:10]
-    drop_cols = ["_sort_account_id"]
-    if "_master_order" in result.columns:
-        drop_cols.append("_master_order")
-    return result.drop(columns=drop_cols)
+def sort_transactions(group: pd.DataFrame) -> pd.DataFrame:
+    sort_cols = [col for col in ["trx_date", "source_file", "source_sheet", "row_order"] if col in group.columns]
+    return group.sort_values(sort_cols, kind="stable").reset_index(drop=True)
+
+
+def derive_first_balance_opening(first_row: pd.Series) -> Optional[float]:
+    balance = first_row.get("balance")
+    if pd.isna(balance):
+        return None
+    debit = float(first_row.get("debit", 0) or 0)
+    credit = float(first_row.get("credit", 0) or 0)
+    return float(balance) + debit - credit
+
+
+def derive_opening_balance(group: pd.DataFrame) -> float:
+    explicit = group["opening_balance_explicit"].dropna()
+    if not explicit.empty:
+        return float(explicit.iloc[0])
+
+    sorted_group = sort_transactions(group)
+    balance_rows = sorted_group[sorted_group["balance"].notna()]
+    if not balance_rows.empty:
+        opening = derive_first_balance_opening(balance_rows.iloc[0])
+        if opening is not None:
+            return opening
+
+    return 0.0
+
+
+def derive_closing_balance(group: pd.DataFrame, opening_balance: float) -> float:
+    sorted_group = sort_transactions(group)
+    balance_rows = sorted_group[sorted_group["balance"].notna()]
+    if not balance_rows.empty:
+        return float(balance_rows.iloc[-1]["balance"])
+
+    total_debit = float(sorted_group["debit"].sum())
+    total_credit = float(sorted_group["credit"].sum())
+    return opening_balance + total_credit - total_debit
 
 
 def build_summary_base(df: pd.DataFrame) -> pd.DataFrame:
     records: List[Dict[str, object]] = []
 
     if not df.empty:
-        working = df.copy()
-        working["_rekening_key"] = working["account_id"].apply(normalize_account_key)
-        grouped = working.groupby("_rekening_key", dropna=False, sort=True)
-
-        for rekening_key, group in grouped:
-            group = group.sort_values(
-                by=["trx_date", "source_file", "source_sheet", "row_order"],
-                kind="stable",
-            ).reset_index(drop=True)
-
-            opening_balance = derive_opening_balance(group)
-            total_debit = float(group["debit"].sum())
-            total_credit = float(group["credit"].sum())
-            closing_balance = derive_closing_balance(group, opening_balance)
-            account_name = first_non_empty(group["account_name"])
-
+        for account_key, group in df.groupby("account_id", dropna=False, sort=True):
+            ordered = sort_transactions(group)
             records.append(
                 {
-                    "Rekening": normalize_account_key(rekening_key),
-                    "Nama Rekening": account_name,
-                    "Saldo Awal": opening_balance,
-                    "Debit": total_debit,
-                    "Kredit": total_credit,
-                    "Saldo Akhir": closing_balance,
-                    "Jumlah Transaksi": len(group),
+                    "Rekening": normalize_account_key(account_key),
+                    "Nama Rekening": first_non_empty(ordered["account_name"]) if "account_name" in ordered.columns else "",
+                    "Saldo Awal": derive_opening_balance(ordered),
+                    "Debit": float(ordered["debit"].sum()),
+                    "Kredit": float(ordered["credit"].sum()),
+                    "Saldo Akhir": derive_closing_balance(ordered, derive_opening_balance(ordered)),
+                    "Jumlah Transaksi": len(ordered),
                 }
             )
 
@@ -1192,59 +1028,14 @@ def build_summary_base(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def build_summary(
-    df: pd.DataFrame,
-    manifest_df: Optional[pd.DataFrame] = None,
-    master_df: Optional[pd.DataFrame] = None,
+def finalize_summary(
+    summary_df: pd.DataFrame,
+    manifest_df: pd.DataFrame,
+    master_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    summary_df = build_summary_base(df)
-
-    manifest_unique_rows: List[Dict[str, object]] = []
-    if manifest_df is not None and not manifest_df.empty:
-        manifest_unique = (
-            manifest_df.assign(account_key=manifest_df["account_id"].apply(normalize_account_key))[["account_key", "account_name"]]
-            .fillna("")
-            .drop_duplicates()
-            .reset_index(drop=True)
-        )
-        for _, row in manifest_unique.iterrows():
-            manifest_unique_rows.append(
-                {
-                    "Rekening": normalize_account_key(row["account_key"]),
-                    "Nama Rekening": normalize_spaces(row["account_name"]),
-                    "Saldo Awal": 0.0,
-                    "Debit": 0.0,
-                    "Kredit": 0.0,
-                    "Saldo Akhir": 0.0,
-                    "Jumlah Transaksi": 0,
-                }
-            )
-
-    master_rows: List[Dict[str, object]] = []
-    if master_df is not None and not master_df.empty:
-        for _, row in master_df.iterrows():
-            master_rows.append(
-                {
-                    "Rekening": normalize_account_key(row["account_id"]),
-                    "Nama Rekening": normalize_spaces(row["master_name"]),
-                    "Saldo Awal": 0.0,
-                    "Debit": 0.0,
-                    "Kredit": 0.0,
-                    "Saldo Akhir": 0.0,
-                    "Jumlah Transaksi": 0,
-                }
-            )
-
-    frames = [summary_df]
-    if manifest_unique_rows:
-        frames.append(pd.DataFrame(manifest_unique_rows))
-    if master_rows:
-        frames.append(pd.DataFrame(master_rows))
-
-    combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-
-    if combined.empty:
-        combined = pd.DataFrame(
+    summary_df = summary_df.copy()
+    if summary_df.empty:
+        summary_df = pd.DataFrame(
             columns=[
                 "Rekening",
                 "Nama Rekening",
@@ -1255,42 +1046,133 @@ def build_summary(
                 "Jumlah Transaksi",
             ]
         )
-    else:
-        combined["_rekening_key"] = combined["Rekening"].apply(normalize_account_key)
 
-        if master_df is not None and not master_df.empty:
-            name_map = {
-                normalize_account_key(row["account_id"]): normalize_spaces(row["master_name"])
-                for _, row in master_df.iterrows()
+    summary_df["Rekening"] = summary_df["Rekening"].astype(str).apply(normalize_account_key)
+
+    manifest_accounts = pd.DataFrame(columns=["account_id", "account_name"])
+    if manifest_df is not None and not manifest_df.empty:
+        manifest_accounts = (
+            manifest_df[["account_id", "account_name"]]
+            .fillna("")
+            .copy()
+        )
+        manifest_accounts["account_id"] = manifest_accounts["account_id"].astype(str).apply(normalize_account_key)
+        manifest_accounts["account_name"] = manifest_accounts["account_name"].astype(str).apply(normalize_spaces)
+        manifest_accounts = manifest_accounts.drop_duplicates(subset=["account_id"], keep="first").reset_index(drop=True)
+
+    keys = set(summary_df["Rekening"].astype(str).tolist())
+    if not manifest_accounts.empty:
+        keys.update(manifest_accounts["account_id"].astype(str).tolist())
+    if master_df is not None and not master_df.empty:
+        keys.update(master_df["account_id"].astype(str).tolist())
+
+    result_rows: List[Dict[str, object]] = []
+    summary_map = summary_df.set_index("Rekening").to_dict("index") if not summary_df.empty else {}
+    manifest_name_map = manifest_accounts.set_index("account_id")["account_name"].to_dict() if not manifest_accounts.empty else {}
+    master_order_map = dict(zip(master_df["account_id"], master_df["master_order"])) if master_df is not None and not master_df.empty else {}
+
+    for account_key in keys:
+        row = summary_map.get(account_key, {})
+        result_rows.append(
+            {
+                "Rekening": display_account_id(account_key),
+                "Nama Rekening": resolve_account_name(
+                    account_key=account_key,
+                    summary_name=row.get("Nama Rekening", ""),
+                    manifest_name=manifest_name_map.get(account_key, ""),
+                    master_df=master_df,
+                ),
+                "Saldo Awal": float(row.get("Saldo Awal", 0.0) or 0.0),
+                "Debit": float(row.get("Debit", 0.0) or 0.0),
+                "Kredit": float(row.get("Kredit", 0.0) or 0.0),
+                "Saldo Akhir": float(row.get("Saldo Akhir", 0.0) or 0.0),
+                "Jumlah Transaksi": int(row.get("Jumlah Transaksi", 0) or 0),
+                "_master_order": master_order_map.get(account_key, 999999),
+                "_account_key": account_key,
             }
-        else:
-            name_map = {}
-
-        combined["Nama Rekening"] = combined.apply(
-            lambda row: normalize_spaces(row["Nama Rekening"]) or name_map.get(row["_rekening_key"], ""),
-            axis=1,
         )
 
-        combined = (
-            combined.groupby("_rekening_key", dropna=False, as_index=False)
-            .agg(
-                {
-                    "Nama Rekening": "first",
-                    "Saldo Awal": "max",
-                    "Debit": "max",
-                    "Kredit": "max",
-                    "Saldo Akhir": "max",
-                    "Jumlah Transaksi": "max",
-                }
+    result = pd.DataFrame(result_rows)
+    if result.empty:
+        return pd.DataFrame(
+            columns=[
+                "Rekening",
+                "Nama Rekening",
+                "Saldo Awal",
+                "Debit",
+                "Kredit",
+                "Saldo Akhir",
+                "Jumlah Transaksi",
+            ]
+        )
+
+    result = result.sort_values(["_master_order", "_account_key"], kind="stable").reset_index(drop=True)
+    result = result.drop(columns=["_master_order", "_account_key"])
+    return result
+
+
+def build_summary(
+    transactions: pd.DataFrame,
+    manifest_df: pd.DataFrame,
+    master_df: pd.DataFrame,
+) -> pd.DataFrame:
+    summary_base = build_summary_base(transactions)
+    return finalize_summary(summary_base, manifest_df, master_df)
+
+
+def derive_daily_account_opening(account_history: pd.DataFrame, day_rows: pd.DataFrame) -> float:
+    ordered_history = sort_transactions(account_history)
+    ordered_day = sort_transactions(day_rows)
+
+    explicit_before_day = ordered_history[
+        ordered_history["opening_balance_explicit"].notna() & (ordered_history["trx_date"] <= ordered_day.iloc[0]["trx_date"])
+    ]["opening_balance_explicit"]
+    explicit_value = float(explicit_before_day.iloc[0]) if not explicit_before_day.empty else None
+
+    first_row = ordered_day.iloc[0]
+    first_opening = derive_first_balance_opening(first_row)
+    if first_opening is not None:
+        return first_opening
+
+    previous_rows = ordered_history[
+        (ordered_history["trx_date"] < first_row["trx_date"])
+        | (
+            (ordered_history["trx_date"] == first_row["trx_date"])
+            & (
+                (ordered_history["source_file"] < first_row["source_file"])
+                | (
+                    (ordered_history["source_file"] == first_row["source_file"])
+                    & (
+                        (ordered_history["source_sheet"] < first_row["source_sheet"])
+                        | (
+                            (ordered_history["source_sheet"] == first_row["source_sheet"])
+                            & (ordered_history["row_order"] < first_row["row_order"])
+                        )
+                    )
+                )
             )
-            .rename(columns={"_rekening_key": "Rekening"})
-            .reset_index(drop=True)
         )
+    ]
 
-    return order_dataframe_by_master(combined, master_df if master_df is not None else pd.DataFrame())
+    previous_balances = previous_rows[previous_rows["balance"].notna()]
+    if not previous_balances.empty:
+        return float(previous_balances.iloc[-1]["balance"])
+
+    if explicit_value is not None:
+        return explicit_value
+
+    return 0.0
 
 
-def build_daily_summary(
+def derive_daily_account_closing(day_rows: pd.DataFrame, day_opening: float) -> float:
+    ordered_day = sort_transactions(day_rows)
+    balance_rows = ordered_day[ordered_day["balance"].notna()]
+    if not balance_rows.empty:
+        return float(balance_rows.iloc[-1]["balance"])
+    return day_opening + float(ordered_day["credit"].sum()) - float(ordered_day["debit"].sum())
+
+
+def build_daily_summary_map(
     transactions: pd.DataFrame,
     manifest_df: pd.DataFrame,
     master_df: pd.DataFrame,
@@ -1298,18 +1180,42 @@ def build_daily_summary(
     if transactions.empty or "trx_date" not in transactions.columns:
         return {}
 
-    daily_summaries: Dict[str, pd.DataFrame] = {}
     valid = transactions[transactions["trx_date"].notna()].copy()
     if valid.empty:
-        return daily_summaries
+        return {}
 
-    for trx_date, group in valid.groupby(valid["trx_date"].dt.date, sort=True):
-        day_df = build_summary(group, manifest_df=manifest_df, master_df=master_df)
-        day_df = day_df[["Rekening", "Saldo Awal", "Debit", "Kredit", "Saldo Akhir"]].copy()
-        day_df = order_dataframe_by_master(day_df, master_df)
-        daily_summaries[str(trx_date)] = day_df
+    daily_records: Dict[str, List[Dict[str, object]]] = {}
 
-    return daily_summaries
+    for account_key, account_history in valid.groupby("account_id", dropna=False, sort=True):
+        ordered_history = sort_transactions(account_history)
+        for trx_date, day_rows in ordered_history.groupby(ordered_history["trx_date"].dt.date, sort=True):
+            ordered_day = sort_transactions(day_rows)
+            day_opening = derive_daily_account_opening(ordered_history, ordered_day)
+            day_closing = derive_daily_account_closing(ordered_day, day_opening)
+            date_key = str(trx_date)
+
+            if date_key not in daily_records:
+                daily_records[date_key] = []
+
+            daily_records[date_key].append(
+                {
+                    "Rekening": normalize_account_key(account_key),
+                    "Nama Rekening": first_non_empty(ordered_day["account_name"]) if "account_name" in ordered_day.columns else "",
+                    "Saldo Awal": day_opening,
+                    "Debit": float(ordered_day["debit"].sum()),
+                    "Kredit": float(ordered_day["credit"].sum()),
+                    "Saldo Akhir": day_closing,
+                    "Jumlah Transaksi": len(ordered_day),
+                }
+            )
+
+    result: Dict[str, pd.DataFrame] = {}
+    for date_key, rows in daily_records.items():
+        day_summary = pd.DataFrame(rows)
+        day_summary = finalize_summary(day_summary, manifest_df, master_df)
+        result[date_key] = day_summary[["Rekening", "Saldo Awal", "Debit", "Kredit", "Saldo Akhir"]].copy()
+
+    return result
 
 
 def make_display_copy(df: pd.DataFrame, money_columns: List[str]) -> pd.DataFrame:
@@ -1342,28 +1248,25 @@ def autosize_worksheet(ws) -> None:
     for column_cells in ws.columns:
         max_length = 0
         column_letter = get_column_letter(column_cells[0].column)
-
         for cell in column_cells:
             value = "" if cell.value is None else str(cell.value)
-            if len(value) > max_length:
-                max_length = len(value)
-
+            max_length = max(max_length, len(value))
         ws.column_dimensions[column_letter].width = min(max(max_length + 2, 12), 40)
 
 
-def build_excel_split_by_date(
+def build_excel_export(
     summary_df: pd.DataFrame,
     detail_df: pd.DataFrame,
     manifest_df: pd.DataFrame,
     daily_summary_map: Dict[str, pd.DataFrame],
-    master_df: pd.DataFrame,
 ) -> bytes:
     output = io.BytesIO()
     used_sheet_names: set[str] = set()
 
     detail_export = detail_df.copy()
-    if "Tanggal" in detail_export.columns:
+    if not detail_export.empty and "Tanggal" in detail_export.columns:
         detail_export["Tanggal"] = pd.to_datetime(detail_export["Tanggal"], errors="coerce")
+        detail_export["Tanggal"] = detail_export["Tanggal"].dt.strftime("%Y-%m-%d")
 
     status_export = manifest_df.copy()
     if status_export.empty:
@@ -1390,70 +1293,27 @@ def build_excel_split_by_date(
             "transaction_count": "Jumlah Transaksi",
         }
     )
-    status_export["Rekening"] = status_export["Rekening"].astype(str).apply(display_account_id)
-    status_export = status_export.sort_values(by=["File", "Sheet", "Rekening"], kind="stable").reset_index(drop=True)
+    if "Rekening" in status_export.columns:
+        status_export["Rekening"] = status_export["Rekening"].astype(str).apply(display_account_id)
+    status_export = status_export.sort_values(["File", "Sheet", "Rekening"], kind="stable").reset_index(drop=True)
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        summary_export = summary_df.copy()
-        summary_export.to_excel(
-            writer,
-            sheet_name=sanitize_sheet_name("Rekap", used_sheet_names),
-            index=False,
-        )
+        summary_df.to_excel(writer, sheet_name=sanitize_sheet_name("Rekap", used_names=used_sheet_names), index=False)
+        detail_export.to_excel(writer, sheet_name=sanitize_sheet_name("Semua_Transaksi", used_names=used_sheet_names), index=False)
+        status_export.to_excel(writer, sheet_name=sanitize_sheet_name("Status_File", used_names=used_sheet_names), index=False)
 
-        all_export = detail_export.copy()
-        if "Rekening" in all_export.columns:
-            all_export["Rekening"] = all_export["Rekening"].astype(str).apply(display_account_id)
-        if "Tanggal" in all_export.columns:
-            all_export["Tanggal"] = all_export["Tanggal"].dt.strftime("%Y-%m-%d")
-
-        all_export.to_excel(
-            writer,
-            sheet_name=sanitize_sheet_name("Semua_Transaksi", used_sheet_names),
-            index=False,
-        )
-
-        status_export.to_excel(
-            writer,
-            sheet_name=sanitize_sheet_name("Status_File", used_sheet_names),
-            index=False,
-        )
-
-        if master_df is not None and not master_df.empty:
-            master_export = master_df.rename(
-                columns={
-                    "master_order": "Urutan",
-                    "account_id": "Rekening",
-                    "bank": "Bank",
-                    "master_name": "Nama Rekening",
-                }
-            ).copy()
-            master_export["Rekening"] = master_export["Rekening"].astype(str).apply(display_account_id)
-            master_export.to_excel(
-                writer,
-                sheet_name=sanitize_sheet_name("Master_Rekening", used_sheet_names),
-                index=False,
-            )
-
-        for date_key, daily_summary in daily_summary_map.items():
-            export_df = daily_summary.copy()
-            export_df.to_excel(
-                writer,
-                sheet_name=sanitize_sheet_name(date_key, used_sheet_names),
-                index=False,
-            )
+        for date_key, day_df in daily_summary_map.items():
+            day_df.to_excel(writer, sheet_name=sanitize_sheet_name(date_key, used_names=used_sheet_names), index=False)
 
         workbook = writer.book
         money_columns = {"Saldo Awal", "Debit", "Kredit", "Saldo Akhir", "Saldo"}
 
         for ws in workbook.worksheets:
             headers = [cell.value for cell in ws[1]]
-
             for col_idx, header in enumerate(headers, start=1):
                 if header in money_columns:
                     for row_idx in range(2, ws.max_row + 1):
                         ws.cell(row=row_idx, column=col_idx).number_format = "#,##0.00"
-
             autosize_worksheet(ws)
 
     output.seek(0)
@@ -1462,36 +1322,29 @@ def build_excel_split_by_date(
 
 def main() -> None:
     st.title("Bank Statement Reader")
-    st.caption("Upload banyak file sekaligus, gabungkan banyak rekening, rekap per rekening, dan export Excel per tanggal.")
+    st.caption("Upload banyak file sekaligus, gabungkan banyak rekening, dan export rekap per rekening / per tanggal.")
 
     with st.sidebar:
-        st.subheader("Parameter")
+        st.subheader("Opsi")
         selected_bank = st.selectbox("Bank", ["BCA", "Mandiri", "BNI"], index=0)
         deduplicate = st.checkbox("Hapus duplikat transaksi identik", value=True)
-
         st.markdown(
             """
-            **Format file yang didukung**
+            **Format file**
             - PDF
             - CSV
             - XLSX / XLS
 
-            **Kolom spreadsheet yang dikenali**
-            - tanggal
-            - keterangan
-            - debit
-            - kredit
-            - saldo
-            - rekening
-            - nama rekening
-            - saldo awal
+            **Catatan**
+            - parser PDF saat ini paling cocok untuk layout BCA berbasis teks
+            - master rekening default disimpan di code, tidak ditampilkan di UI
             """
         )
 
-    master_df = parse_master_accounts(DEFAULT_MASTER_TEXT.get(selected_bank, ""), selected_bank)
+    master_df = parse_master_accounts(selected_bank)
 
     uploaded_files = st.file_uploader(
-        f"Pilih file mutasi / rekening koran {selected_bank}",
+        "Pilih file mutasi / rekening koran",
         type=["pdf", "csv", "xlsx", "xls"],
         accept_multiple_files=True,
     )
@@ -1515,7 +1368,24 @@ def main() -> None:
 
         try:
             if ext == ".pdf":
-                df_file, manifest_file, notes = parse_generic_pdf(file_bytes, filename, selected_bank)
+                if selected_bank != "BCA":
+                    df_file = pd.DataFrame()
+                    manifest_file = pd.DataFrame(
+                        [
+                            create_manifest_row(
+                                account_id=Path(filename).stem,
+                                account_name="",
+                                source_file=filename,
+                                source_sheet="PDF",
+                                parse_status="UNSUPPORTED_PDF",
+                                parse_note=f"Parser PDF khusus {selected_bank} belum tersedia",
+                                transaction_count=0,
+                            )
+                        ]
+                    )
+                    notes = [f"{filename}: parser PDF khusus {selected_bank} belum tersedia"]
+                else:
+                    df_file, manifest_file, notes = parse_bca_pdf(file_bytes, filename)
             elif ext in {".csv", ".xlsx", ".xls"}:
                 df_file, manifest_file, notes = parse_tabular_file(file_bytes, filename, ext)
             else:
@@ -1523,7 +1393,7 @@ def main() -> None:
                 manifest_file = pd.DataFrame(
                     [
                         create_manifest_row(
-                            account_id=f"UNKNOWN::{Path(filename).stem}",
+                            account_id=Path(filename).stem,
                             account_name="",
                             source_file=filename,
                             source_sheet="FILE",
@@ -1544,14 +1414,13 @@ def main() -> None:
                 parsed_dfs.append(df_file)
             else:
                 parser_errors.append(f"{filename}: tidak ada transaksi valid, tetapi file tetap dicatat")
-
         except Exception as exc:
             parser_errors.append(f"{filename}: error - {exc}")
             manifest_dfs.append(
                 pd.DataFrame(
                     [
                         create_manifest_row(
-                            account_id=f"UNKNOWN::{Path(filename).stem}",
+                            account_id=Path(filename).stem,
                             account_name="",
                             source_file=filename,
                             source_sheet="FILE",
@@ -1572,27 +1441,66 @@ def main() -> None:
         return
 
     manifest_df = pd.concat(manifest_dfs, ignore_index=True)
-    transactions = pd.concat(parsed_dfs, ignore_index=True) if parsed_dfs else pd.DataFrame()
+    manifest_df["account_id"] = manifest_df["account_id"].astype(str).apply(normalize_account_key)
 
+    transactions = pd.concat(parsed_dfs, ignore_index=True) if parsed_dfs else pd.DataFrame()
     if not transactions.empty:
         transactions = finalize_transactions(transactions, deduplicate=deduplicate)
 
-    summary = build_summary(transactions, manifest_df=manifest_df, master_df=master_df)
-    daily_summary_map = build_daily_summary(transactions, manifest_df=manifest_df, master_df=master_df)
+    summary_df = build_summary(transactions, manifest_df=manifest_df, master_df=master_df)
+    daily_summary_map = build_daily_summary_map(transactions, manifest_df=manifest_df, master_df=master_df)
+
+    if not transactions.empty:
+        detail_df = transactions[
+            [
+                "account_id",
+                "account_name",
+                "trx_date",
+                "description",
+                "debit",
+                "credit",
+                "balance",
+                "source_file",
+                "source_sheet",
+                "row_order",
+            ]
+        ].rename(
+            columns={
+                "account_id": "Rekening",
+                "account_name": "Nama Rekening",
+                "trx_date": "Tanggal",
+                "description": "Keterangan",
+                "debit": "Debit",
+                "credit": "Kredit",
+                "balance": "Saldo",
+                "source_file": "File",
+                "source_sheet": "Sheet",
+                "row_order": "Row",
+            }
+        )
+        detail_df["Rekening"] = detail_df["Rekening"].astype(str).apply(display_account_id)
+        master_name_map = dict(zip(master_df["account_id"], master_df["master_name"])) if not master_df.empty else {}
+        detail_df["Nama Rekening"] = detail_df.apply(
+            lambda row: normalize_spaces(master_name_map.get(normalize_account_key(row["Rekening"]), "")) or normalize_spaces(row["Nama Rekening"]),
+            axis=1,
+        )
+    else:
+        detail_df = pd.DataFrame(
+            columns=["Rekening", "Nama Rekening", "Tanggal", "Keterangan", "Debit", "Kredit", "Saldo", "File", "Sheet", "Row"]
+        )
 
     st.success(
-        f"Bank: {selected_bank} | "
         f"Upload: {len(uploaded_files)} file | "
         f"Tercatat: {manifest_df['source_file'].nunique()} file | "
-        f"Master rekening: {len(master_df)}"
+        f"Transaksi valid: {len(transactions) if not transactions.empty else 0} baris"
     )
 
     st.subheader("Rekap per Rekening")
-    summary_display = make_display_copy(
-        summary[["Rekening", "Nama Rekening", "Saldo Awal", "Debit", "Kredit", "Saldo Akhir", "Jumlah Transaksi"]],
-        money_columns=["Saldo Awal", "Debit", "Kredit", "Saldo Akhir"],
+    st.dataframe(
+        make_display_copy(summary_df, ["Saldo Awal", "Debit", "Kredit", "Saldo Akhir"]),
+        use_container_width=True,
+        hide_index=True,
     )
-    st.dataframe(summary_display, use_container_width=True, hide_index=True)
 
     st.subheader("Status File / Sheet")
     status_preview = manifest_df.rename(
@@ -1609,55 +1517,22 @@ def main() -> None:
     status_preview["Rekening"] = status_preview["Rekening"].astype(str).apply(display_account_id)
     st.dataframe(status_preview, use_container_width=True, hide_index=True)
 
-    if not transactions.empty:
-        detail_columns = [
-            "account_id",
-            "account_name",
-            "trx_date",
-            "description",
-            "debit",
-            "credit",
-            "balance",
-            "source_file",
-            "source_sheet",
-        ]
-        detail_df = transactions[detail_columns].rename(
-            columns={
-                "account_id": "Rekening",
-                "account_name": "Nama Rekening",
-                "trx_date": "Tanggal",
-                "description": "Keterangan",
-                "debit": "Debit",
-                "credit": "Kredit",
-                "balance": "Saldo",
-                "source_file": "File",
-                "source_sheet": "Sheet",
-            }
-        )
-    else:
-        detail_df = pd.DataFrame(
-            columns=[
-                "Rekening",
-                "Nama Rekening",
-                "Tanggal",
-                "Keterangan",
-                "Debit",
-                "Kredit",
-                "Saldo",
-                "File",
-                "Sheet",
-            ]
-        )
-
-    detail_df["Rekening"] = detail_df["Rekening"].astype(str).apply(display_account_id)
-    detail_display = make_display_copy(detail_df, money_columns=["Debit", "Kredit", "Saldo"])
     st.subheader("Detail Transaksi")
-    st.dataframe(detail_display, use_container_width=True, hide_index=True)
+    st.dataframe(
+        make_display_copy(detail_df, ["Debit", "Kredit", "Saldo"]),
+        use_container_width=True,
+        hide_index=True,
+    )
 
-    excel_bytes = build_excel_split_by_date(summary, detail_df, manifest_df, daily_summary_map, master_df)
+    excel_bytes = build_excel_export(
+        summary_df=summary_df,
+        detail_df=detail_df,
+        manifest_df=manifest_df,
+        daily_summary_map=daily_summary_map,
+    )
 
     st.download_button(
-        label="Download Excel Split per Tanggal",
+        label="Download Excel",
         data=excel_bytes,
         file_name=f"rekap_{selected_bank.lower()}_split_per_tanggal.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1665,7 +1540,7 @@ def main() -> None:
 
     st.download_button(
         label="Download Rekap CSV",
-        data=summary.to_csv(index=False).encode("utf-8-sig"),
+        data=summary_df.to_csv(index=False).encode("utf-8-sig"),
         file_name=f"rekap_{selected_bank.lower()}.csv",
         mime="text/csv",
     )
@@ -1677,18 +1552,16 @@ def main() -> None:
         mime="text/csv",
     )
 
-    st.download_button(
-        label="Download Status File CSV",
-        data=status_preview.to_csv(index=False).encode("utf-8-sig"),
-        file_name=f"status_file_{selected_bank.lower()}.csv",
-        mime="text/csv",
-    )
-
     with st.expander("Detail log parser"):
         for note in parser_notes:
             st.write(f"- {note}")
         for err in parser_errors:
             st.write(f"- {err}")
+
+    st.caption(
+        "Saldo akhir per sheet tanggal diambil dari kolom Saldo pada baris terakhir di tanggal tersebut. "
+        "Jika ada beberapa baris pada tanggal yang sama, sistem memilih row terbesar setelah data diurutkan."
+    )
 
 
 if __name__ == "__main__":
