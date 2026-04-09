@@ -965,9 +965,28 @@ def derive_first_balance_opening(first_row: pd.Series) -> Optional[float]:
     balance = first_row.get("balance")
     if pd.isna(balance):
         return None
+
+    balance_value = float(balance)
     debit = float(first_row.get("debit", 0) or 0)
     credit = float(first_row.get("credit", 0) or 0)
-    return float(balance) + debit - credit
+
+    if credit > 0:
+        return balance_value - credit
+
+    if debit > 0:
+        return balance_value + debit
+
+    marker = normalize_spaces(first_row.get("dc_raw", "")).upper()
+    amount = first_row.get("amount")
+    amount_value = float(abs(amount)) if pd.notna(amount) else 0.0
+
+    if marker == "CR" and amount_value > 0:
+        return balance_value - amount_value
+
+    if marker == "DB" and amount_value > 0:
+        return balance_value + amount_value
+
+    return balance_value + debit - credit
 
 
 def derive_opening_balance(group: pd.DataFrame) -> float:
