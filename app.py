@@ -65,13 +65,13 @@ COLUMN_ALIASES = {
         "db/cr",
         "d/c",
         "dk",
+        "dc",
         "type",
         "tipe",
         "jenis",
         "jenis transaksi",
         "transaction type",
         "tipe transaksi",
-        "kode transaksi",
         "posisi",
         "mutasi type",
     ],
@@ -425,6 +425,11 @@ def parse_pdf_transaction_line(
         "source_sheet": "PDF",
         "row_order": row_order,
         "dc_raw": dc_marker or "",
+        "row_opening_balance": (
+            (float(balance) - float(abs(amount))) if (balance is not None and amount is not None and dc_marker == "CR")
+            else (float(balance) + float(abs(amount))) if (balance is not None and amount is not None and dc_marker == "DB")
+            else None
+        ),
     }
 
 
@@ -516,15 +521,9 @@ def map_columns(df: pd.DataFrame) -> Dict[str, str]:
 
 def standardize_dc(value: object) -> str:
     text = normalize_spaces(value).upper()
-    if not text:
-        return ""
     if text in {"DB", "DEBIT", "DEBET", "D"}:
         return "DB"
     if text in {"CR", "CREDIT", "KREDIT", "K"}:
-        return "CR"
-    if " DB " in f" {text} " or text.startswith("DB") or "DEBIT" in text or "DEBET" in text:
-        return "DB"
-    if " CR " in f" {text} " or text.startswith("CR") or "CREDIT" in text or "KREDIT" in text:
         return "CR"
     return ""
 
@@ -673,19 +672,12 @@ def convert_spreadsheet_to_transactions(
 
             debit = row["debit"] if pd.notna(row["debit"]) else 0.0
             credit = row["credit"] if pd.notna(row["credit"]) else 0.0
-            marker = standardize_dc(row["dc"])
 
             if debit == 0 and credit == 0:
-                if marker == "DB":
+                if row["dc"] == "DB" or amount < 0:
                     df.at[idx, "debit"] = float(abs(amount))
                     df.at[idx, "credit"] = 0.0
-                elif marker == "CR":
-                    df.at[idx, "credit"] = float(abs(amount))
-                    df.at[idx, "debit"] = 0.0
-                elif amount < 0:
-                    df.at[idx, "debit"] = float(abs(amount))
-                    df.at[idx, "credit"] = 0.0
-                elif amount > 0:
+                elif row["dc"] == "CR" or amount > 0:
                     df.at[idx, "credit"] = float(abs(amount))
                     df.at[idx, "debit"] = 0.0
 
@@ -695,6 +687,7 @@ def convert_spreadsheet_to_transactions(
     df["source_sheet"] = sheet_name
     df["row_order"] = range(len(df))
     df["dc_raw"] = df["dc"]
+    df["row_opening_balance"] = df.apply(derive_row_opening_balance, axis=1)
 
     required_cols = [
         "account_id",
@@ -710,6 +703,7 @@ def convert_spreadsheet_to_transactions(
         "source_sheet",
         "row_order",
         "dc_raw",
+        "row_opening_balance",
     ]
     df = df[required_cols]
     df = df[df["trx_date"].notna()].copy()
@@ -911,6 +905,9 @@ def finalize_transactions(df: pd.DataFrame, deduplicate: bool) -> pd.DataFrame:
     result["balance"] = pd.to_numeric(result["balance"], errors="coerce")
     result["amount"] = pd.to_numeric(result["amount"], errors="coerce")
     result["opening_balance_explicit"] = pd.to_numeric(result["opening_balance_explicit"], errors="coerce")
+    if "row_opening_balance" not in result.columns:
+        result["row_opening_balance"] = None
+    result["row_opening_balance"] = result.apply(derive_row_opening_balance, axis=1)
 
     result = result.sort_values(
         by=["account_id", "trx_date", "source_file", "source_sheet", "row_order"],
@@ -978,13 +975,63 @@ def sort_transactions(group: pd.DataFrame) -> pd.DataFrame:
     return group.sort_values(sort_cols, kind="stable").reset_index(drop=True)
 
 
+def derive_row_opening_balance(row: pd.Series) -> Optional[float]:
+    balance = row.get("balance")
+    if pd.isna(balance):
+        return None
+
+    balance_value = float(balance)
+    marker = normalize_spaces(row.get("dc_raw", "") or row.get("dc", "")).upper()
+
+    amount = row.get("amount")
+    amount_value: Optional[float] = None
+    if pd.notna(amount):
+        amount_value = float(abs(amount))
+
+    debit = float(row.get("debit", 0) or 0)
+    credit = float(row.get("credit", 0) or 0)
+
+    if amount_value is None or amount_value == 0:
+        if credit > 0 and debit == 0:
+            amount_value = float(abs(credit))
+            if not marker:
+                marker = "CR"
+        elif debit > 0 and credit == 0:
+            amount_value = float(abs(debit))
+            if not marker:
+                marker = "DB"
+
+    if marker == "CR" and amount_value is not None:
+        return balance_value - amount_value
+
+    if marker == "DB" and amount_value is not None:
+        return balance_value + amount_value
+
+    if credit > 0 and debit == 0:
+        return balance_value - credit
+
+    if debit > 0 and credit == 0:
+        return balance_value + debit
+
+    return balance_value
+
+
 def derive_first_balance_opening(first_row: pd.Series) -> Optional[float]:
     balance = first_row.get("balance")
     if pd.isna(balance):
         return None
 
     balance_value = float(balance)
-    marker = standardize_dc(first_row.get("dc_raw", ""))
+    debit = float(first_row.get("debit", 0) or 0)
+    credit = float(first_row.get("credit", 0) or 0)
+
+    if credit > 0:
+        return balance_value - credit
+
+    if debit > 0:
+        return balance_value + debit
+
+    marker = normalize_spaces(first_row.get("dc_raw", "")).upper()
     amount = first_row.get("amount")
     amount_value = float(abs(amount)) if pd.notna(amount) else 0.0
 
@@ -994,24 +1041,21 @@ def derive_first_balance_opening(first_row: pd.Series) -> Optional[float]:
     if marker == "DB" and amount_value > 0:
         return balance_value + amount_value
 
-    credit = float(first_row.get("credit", 0) or 0)
-    debit = float(first_row.get("debit", 0) or 0)
-
-    if credit > 0:
-        return balance_value - credit
-
-    if debit > 0:
-        return balance_value + debit
-
     return balance_value + debit - credit
 
 
 def derive_opening_balance(group: pd.DataFrame) -> float:
-    explicit = group["opening_balance_explicit"].dropna()
+    sorted_group = sort_transactions(group)
+
+    if "row_opening_balance" in sorted_group.columns:
+        opening_rows = sorted_group[sorted_group["row_opening_balance"].notna()]
+        if not opening_rows.empty:
+            return float(opening_rows.iloc[0]["row_opening_balance"])
+
+    explicit = sorted_group["opening_balance_explicit"].dropna()
     if not explicit.empty:
         return float(explicit.iloc[0])
 
-    sorted_group = sort_transactions(group)
     balance_rows = sorted_group[sorted_group["balance"].notna()]
     if not balance_rows.empty:
         opening = derive_first_balance_opening(balance_rows.iloc[0])
@@ -1166,9 +1210,16 @@ def get_explicit_opening_value(account_history: pd.DataFrame) -> Optional[float]
 
 def derive_day_first_row_opening(day_rows: pd.DataFrame) -> Optional[float]:
     ordered_day = sort_transactions(day_rows)
+
+    if "row_opening_balance" in ordered_day.columns:
+        opening_rows = ordered_day[ordered_day["row_opening_balance"].notna()]
+        if not opening_rows.empty:
+            return float(opening_rows.iloc[0]["row_opening_balance"])
+
     balance_rows = ordered_day[ordered_day["balance"].notna()]
     if balance_rows.empty:
         return None
+
     first_balance_row = balance_rows.iloc[0]
     return derive_first_balance_opening(first_balance_row)
 
@@ -1181,13 +1232,13 @@ def derive_daily_account_opening(
     if previous_day_closing is not None:
         return float(previous_day_closing)
 
-    explicit_value = get_explicit_opening_value(sort_transactions(account_history))
-    if explicit_value is not None:
-        return explicit_value
-
     first_opening = derive_day_first_row_opening(day_rows)
     if first_opening is not None:
         return first_opening
+
+    explicit_value = get_explicit_opening_value(sort_transactions(account_history))
+    if explicit_value is not None:
+        return explicit_value
 
     return 0.0
 
@@ -1245,7 +1296,10 @@ def build_daily_summary_map(
 
     for account_key in account_keys:
         history = history_map.get(account_key, pd.DataFrame())
-        explicit_map[account_key] = get_explicit_opening_value(history) if not history.empty else None
+        if not history.empty:
+            explicit_map[account_key] = derive_opening_balance(history)
+        else:
+            explicit_map[account_key] = None
 
     result: Dict[str, pd.DataFrame] = {}
 
