@@ -1,11 +1,4 @@
 # file: app.py
-"""
-Install:
-    pip install streamlit pandas pdfplumber openpyxl
-
-Run:
-    streamlit run app.py
-"""
 
 from __future__ import annotations
 
@@ -19,6 +12,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 import pdfplumber
 import streamlit as st
+from openpyxl.utils import get_column_letter
 
 
 st.set_page_config(page_title="BCA Rekening Koran Reader", layout="wide")
@@ -491,9 +485,7 @@ def parse_bca_pdf(file_bytes: bytes, filename: str) -> Tuple[pd.DataFrame, List[
     df = pd.DataFrame(rows)
     df = infer_missing_debit_credit(df)
 
-    notes.append(
-        f"{filename}: PDF terbaca | rekening={account_id} | transaksi={len(df)}"
-    )
+    notes.append(f"{filename}: PDF terbaca | rekening={account_id} | transaksi={len(df)}")
     return df, notes
 
 
@@ -804,6 +796,87 @@ def make_display_copy(df: pd.DataFrame, money_columns: List[str]) -> pd.DataFram
     return display_df
 
 
+def sanitize_sheet_name(name: str, used_names: set[str]) -> str:
+    clean = re.sub(r"[:\\/?*\[\]]", "_", str(name)).strip()
+    clean = clean[:31] or "Sheet"
+
+    if clean not in used_names:
+        used_names.add(clean)
+        return clean
+
+    base = clean[:28] or "Sht"
+    counter = 1
+    while True:
+        candidate = f"{base}_{counter}"[:31]
+        if candidate not in used_names:
+            used_names.add(candidate)
+            return candidate
+        counter += 1
+
+
+def autosize_worksheet(ws) -> None:
+    for column_cells in ws.columns:
+        max_length = 0
+        column_letter = get_column_letter(column_cells[0].column)
+
+        for cell in column_cells:
+            value = "" if cell.value is None else str(cell.value)
+            if len(value) > max_length:
+                max_length = len(value)
+
+        ws.column_dimensions[column_letter].width = min(max(max_length + 2, 12), 40)
+
+
+def build_excel_split_by_date(summary_df: pd.DataFrame, detail_df: pd.DataFrame) -> bytes:
+    output = io.BytesIO()
+    used_sheet_names: set[str] = set()
+
+    detail_export = detail_df.copy()
+    detail_export["Tanggal"] = pd.to_datetime(detail_export["Tanggal"], errors="coerce")
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        summary_export = summary_df.copy()
+        summary_export.to_excel(
+            writer,
+            sheet_name=sanitize_sheet_name("Rekap", used_sheet_names),
+            index=False,
+        )
+
+        all_export = detail_export.copy()
+        all_export["Tanggal"] = all_export["Tanggal"].dt.strftime("%Y-%m-%d")
+        all_export.to_excel(
+            writer,
+            sheet_name=sanitize_sheet_name("Semua_Transaksi", used_sheet_names),
+            index=False,
+        )
+
+        dated_rows = detail_export[detail_export["Tanggal"].notna()].copy()
+        if not dated_rows.empty:
+            dated_rows = dated_rows.sort_values(["Tanggal", "Rekening", "File", "Sheet"], kind="stable")
+
+            for trx_date, group in dated_rows.groupby(dated_rows["Tanggal"].dt.date, sort=True):
+                sheet_name = sanitize_sheet_name(str(trx_date), used_sheet_names)
+                export_group = group.copy()
+                export_group["Tanggal"] = export_group["Tanggal"].dt.strftime("%Y-%m-%d")
+                export_group.to_excel(writer, sheet_name=sheet_name, index=False)
+
+        workbook = writer.book
+        money_columns = {"Saldo Awal", "Debit", "Kredit", "Saldo Akhir", "Saldo"}
+
+        for ws in workbook.worksheets:
+            headers = [cell.value for cell in ws[1]]
+
+            for col_idx, header in enumerate(headers, start=1):
+                if header in money_columns:
+                    for row_idx in range(2, ws.max_row + 1):
+                        ws.cell(row=row_idx, column=col_idx).number_format = '#,##0.00'
+
+            autosize_worksheet(ws)
+
+    output.seek(0)
+    return output.getvalue()
+
+
 def main() -> None:
     st.title("BCA Rekening Koran Reader")
     st.caption("Upload banyak file sekaligus, gabungkan banyak rekening, lalu rekap per rekening.")
@@ -894,13 +967,6 @@ def main() -> None:
     )
     st.dataframe(summary_display, use_container_width=True, hide_index=True)
 
-    st.download_button(
-        label="Download Rekap CSV",
-        data=summary.to_csv(index=False).encode("utf-8-sig"),
-        file_name="rekap_rekening_bca.csv",
-        mime="text/csv",
-    )
-
     st.subheader("Detail Transaksi")
     detail_columns = [
         "account_id",
@@ -928,6 +994,22 @@ def main() -> None:
     )
     detail_display = make_display_copy(detail_df, money_columns=["Debit", "Kredit", "Saldo"])
     st.dataframe(detail_display, use_container_width=True, hide_index=True)
+
+    excel_bytes = build_excel_split_by_date(summary, detail_df)
+
+    st.download_button(
+        label="Download Excel Split per Tanggal",
+        data=excel_bytes,
+        file_name="rekap_bca_split_per_tanggal.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    st.download_button(
+        label="Download Rekap CSV",
+        data=summary.to_csv(index=False).encode("utf-8-sig"),
+        file_name="rekap_rekening_bca.csv",
+        mime="text/csv",
+    )
 
     st.download_button(
         label="Download Detail CSV",
