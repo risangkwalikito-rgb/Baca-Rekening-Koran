@@ -1430,12 +1430,6 @@ def main() -> None:
         st.subheader("Parameter")
         selected_bank = st.selectbox("Bank", ["BCA", "Mandiri", "BNI"], index=0)
         deduplicate = st.checkbox("Hapus duplikat transaksi identik", value=True)
-        master_text = st.text_area(
-            "Master rekening",
-            value=DEFAULT_MASTER_TEXT.get(selected_bank, ""),
-            height=260,
-            help="Format: urutan, rekening, bank, nama rekening. Untuk BCA sudah terisi default.",
-        )
 
         st.markdown(
             """
@@ -1456,7 +1450,7 @@ def main() -> None:
             """
         )
 
-    master_df = parse_master_accounts(master_text, selected_bank)
+    master_df = parse_master_accounts(DEFAULT_MASTER_TEXT.get(selected_bank, ""), selected_bank)
 
     uploaded_files = st.file_uploader(
         f"Pilih file mutasi / rekening koran {selected_bank}",
