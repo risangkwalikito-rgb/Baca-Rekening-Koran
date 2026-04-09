@@ -1120,46 +1120,38 @@ def build_summary(
     return finalize_summary(summary_base, manifest_df, master_df)
 
 
-def derive_daily_account_opening(account_history: pd.DataFrame, day_rows: pd.DataFrame) -> float:
-    ordered_history = sort_transactions(account_history)
+
+def get_explicit_opening_value(account_history: pd.DataFrame) -> Optional[float]:
+    explicit_rows = account_history["opening_balance_explicit"].dropna()
+    if explicit_rows.empty:
+        return None
+    return float(explicit_rows.iloc[0])
+
+
+def derive_day_first_row_opening(day_rows: pd.DataFrame) -> Optional[float]:
     ordered_day = sort_transactions(day_rows)
+    balance_rows = ordered_day[ordered_day["balance"].notna()]
+    if balance_rows.empty:
+        return None
+    first_balance_row = balance_rows.iloc[0]
+    return derive_first_balance_opening(first_balance_row)
 
-    explicit_before_day = ordered_history[
-        ordered_history["opening_balance_explicit"].notna() & (ordered_history["trx_date"] <= ordered_day.iloc[0]["trx_date"])
-    ]["opening_balance_explicit"]
-    explicit_value = float(explicit_before_day.iloc[0]) if not explicit_before_day.empty else None
 
-    first_row = ordered_day.iloc[0]
-    first_opening = derive_first_balance_opening(first_row)
-    if first_opening is not None:
-        return first_opening
+def derive_daily_account_opening(
+    previous_day_closing: Optional[float],
+    account_history: pd.DataFrame,
+    day_rows: pd.DataFrame,
+) -> float:
+    if previous_day_closing is not None:
+        return float(previous_day_closing)
 
-    previous_rows = ordered_history[
-        (ordered_history["trx_date"] < first_row["trx_date"])
-        | (
-            (ordered_history["trx_date"] == first_row["trx_date"])
-            & (
-                (ordered_history["source_file"] < first_row["source_file"])
-                | (
-                    (ordered_history["source_file"] == first_row["source_file"])
-                    & (
-                        (ordered_history["source_sheet"] < first_row["source_sheet"])
-                        | (
-                            (ordered_history["source_sheet"] == first_row["source_sheet"])
-                            & (ordered_history["row_order"] < first_row["row_order"])
-                        )
-                    )
-                )
-            )
-        )
-    ]
-
-    previous_balances = previous_rows[previous_rows["balance"].notna()]
-    if not previous_balances.empty:
-        return float(previous_balances.iloc[-1]["balance"])
-
+    explicit_value = get_explicit_opening_value(sort_transactions(account_history))
     if explicit_value is not None:
         return explicit_value
+
+    first_opening = derive_day_first_row_opening(day_rows)
+    if first_opening is not None:
+        return first_opening
 
     return 0.0
 
@@ -1168,7 +1160,8 @@ def derive_daily_account_closing(day_rows: pd.DataFrame, day_opening: float) -> 
     ordered_day = sort_transactions(day_rows)
     balance_rows = ordered_day[ordered_day["balance"].notna()]
     if not balance_rows.empty:
-        return float(balance_rows.iloc[-1]["balance"])
+        last_balance_row = balance_rows.iloc[-1]
+        return float(last_balance_row["balance"])
     return day_opening + float(ordered_day["credit"].sum()) - float(ordered_day["debit"].sum())
 
 
@@ -1184,33 +1177,87 @@ def build_daily_summary_map(
     if valid.empty:
         return {}
 
-    daily_records: Dict[str, List[Dict[str, object]]] = {}
+    min_date = pd.to_datetime(valid["trx_date"], errors="coerce").min()
+    max_date = pd.to_datetime(valid["trx_date"], errors="coerce").max()
+    if pd.isna(min_date) or pd.isna(max_date):
+        return {}
 
-    for account_key, account_history in valid.groupby("account_id", dropna=False, sort=True):
-        ordered_history = sort_transactions(account_history)
-        for trx_date, day_rows in ordered_history.groupby(ordered_history["trx_date"].dt.date, sort=True):
-            ordered_day = sort_transactions(day_rows)
-            day_opening = derive_daily_account_opening(ordered_history, ordered_day)
-            day_closing = derive_daily_account_closing(ordered_day, day_opening)
-            date_key = str(trx_date)
+    date_range = pd.date_range(start=min_date.normalize(), end=max_date.normalize(), freq="D")
 
-            if date_key not in daily_records:
-                daily_records[date_key] = []
+    account_keys = set(valid["account_id"].astype(str).apply(normalize_account_key).tolist())
+    if manifest_df is not None and not manifest_df.empty:
+        account_keys.update(manifest_df["account_id"].astype(str).apply(normalize_account_key).tolist())
+    if master_df is not None and not master_df.empty:
+        account_keys.update(master_df["account_id"].astype(str).apply(normalize_account_key).tolist())
 
-            daily_records[date_key].append(
+    history_map: Dict[str, pd.DataFrame] = {}
+    if not valid.empty:
+        for account_key, history in valid.groupby("account_id", dropna=False, sort=True):
+            history_map[normalize_account_key(account_key)] = sort_transactions(history)
+
+    account_name_map: Dict[str, str] = {}
+    if manifest_df is not None and not manifest_df.empty:
+        manifest_accounts = manifest_df[["account_id", "account_name"]].fillna("").copy()
+        manifest_accounts["account_id"] = manifest_accounts["account_id"].astype(str).apply(normalize_account_key)
+        manifest_accounts["account_name"] = manifest_accounts["account_name"].astype(str).apply(normalize_spaces)
+        account_name_map.update(
+            manifest_accounts.drop_duplicates(subset=["account_id"], keep="first").set_index("account_id")["account_name"].to_dict()
+        )
+
+    last_closing_map: Dict[str, Optional[float]] = {account_key: None for account_key in account_keys}
+    explicit_map: Dict[str, Optional[float]] = {}
+
+    for account_key in account_keys:
+        history = history_map.get(account_key, pd.DataFrame())
+        explicit_map[account_key] = get_explicit_opening_value(history) if not history.empty else None
+
+    result: Dict[str, pd.DataFrame] = {}
+
+    for trx_date in date_range:
+        date_key = trx_date.strftime("%Y-%m-%d")
+        rows: List[Dict[str, object]] = []
+
+        for account_key in sorted(account_keys):
+            history = history_map.get(account_key, pd.DataFrame())
+            if not history.empty:
+                day_rows = history[history["trx_date"].dt.date == trx_date.date()].copy()
+            else:
+                day_rows = pd.DataFrame()
+
+            if not day_rows.empty:
+                opening = derive_daily_account_opening(last_closing_map.get(account_key), history, day_rows)
+                debit = float(day_rows["debit"].sum())
+                credit = float(day_rows["credit"].sum())
+                closing = derive_daily_account_closing(day_rows, opening)
+                account_name = first_non_empty(day_rows["account_name"]) if "account_name" in day_rows.columns else ""
+                tx_count = len(day_rows)
+            else:
+                opening = last_closing_map.get(account_key)
+                if opening is None:
+                    opening = explicit_map.get(account_key)
+                if opening is None:
+                    opening = 0.0
+                opening = float(opening)
+                closing = opening
+                debit = 0.0
+                credit = 0.0
+                account_name = account_name_map.get(account_key, "")
+                tx_count = 0
+
+            last_closing_map[account_key] = float(closing)
+
+            rows.append(
                 {
-                    "Rekening": normalize_account_key(account_key),
-                    "Nama Rekening": first_non_empty(ordered_day["account_name"]) if "account_name" in ordered_day.columns else "",
-                    "Saldo Awal": day_opening,
-                    "Debit": float(ordered_day["debit"].sum()),
-                    "Kredit": float(ordered_day["credit"].sum()),
-                    "Saldo Akhir": day_closing,
-                    "Jumlah Transaksi": len(ordered_day),
+                    "Rekening": account_key,
+                    "Nama Rekening": account_name,
+                    "Saldo Awal": float(opening),
+                    "Debit": float(debit),
+                    "Kredit": float(credit),
+                    "Saldo Akhir": float(closing),
+                    "Jumlah Transaksi": int(tx_count),
                 }
             )
 
-    result: Dict[str, pd.DataFrame] = {}
-    for date_key, rows in daily_records.items():
         day_summary = pd.DataFrame(rows)
         day_summary = finalize_summary(day_summary, manifest_df, master_df)
         result[date_key] = day_summary[["Rekening", "Saldo Awal", "Debit", "Kredit", "Saldo Akhir"]].copy()
