@@ -68,6 +68,10 @@ COLUMN_ALIASES = {
         "type",
         "tipe",
         "jenis",
+        "jenis transaksi",
+        "transaction type",
+        "tipe transaksi",
+        "kode transaksi",
         "posisi",
         "mutasi type",
     ],
@@ -512,9 +516,15 @@ def map_columns(df: pd.DataFrame) -> Dict[str, str]:
 
 def standardize_dc(value: object) -> str:
     text = normalize_spaces(value).upper()
+    if not text:
+        return ""
     if text in {"DB", "DEBIT", "DEBET", "D"}:
         return "DB"
     if text in {"CR", "CREDIT", "KREDIT", "K"}:
+        return "CR"
+    if " DB " in f" {text} " or text.startswith("DB") or "DEBIT" in text or "DEBET" in text:
+        return "DB"
+    if " CR " in f" {text} " or text.startswith("CR") or "CREDIT" in text or "KREDIT" in text:
         return "CR"
     return ""
 
@@ -663,12 +673,19 @@ def convert_spreadsheet_to_transactions(
 
             debit = row["debit"] if pd.notna(row["debit"]) else 0.0
             credit = row["credit"] if pd.notna(row["credit"]) else 0.0
+            marker = standardize_dc(row["dc"])
 
             if debit == 0 and credit == 0:
-                if row["dc"] == "DB" or amount < 0:
+                if marker == "DB":
                     df.at[idx, "debit"] = float(abs(amount))
                     df.at[idx, "credit"] = 0.0
-                elif row["dc"] == "CR" or amount > 0:
+                elif marker == "CR":
+                    df.at[idx, "credit"] = float(abs(amount))
+                    df.at[idx, "debit"] = 0.0
+                elif amount < 0:
+                    df.at[idx, "debit"] = float(abs(amount))
+                    df.at[idx, "credit"] = 0.0
+                elif amount > 0:
                     df.at[idx, "credit"] = float(abs(amount))
                     df.at[idx, "debit"] = 0.0
 
@@ -967,16 +984,7 @@ def derive_first_balance_opening(first_row: pd.Series) -> Optional[float]:
         return None
 
     balance_value = float(balance)
-    debit = float(first_row.get("debit", 0) or 0)
-    credit = float(first_row.get("credit", 0) or 0)
-
-    if credit > 0:
-        return balance_value - credit
-
-    if debit > 0:
-        return balance_value + debit
-
-    marker = normalize_spaces(first_row.get("dc_raw", "")).upper()
+    marker = standardize_dc(first_row.get("dc_raw", ""))
     amount = first_row.get("amount")
     amount_value = float(abs(amount)) if pd.notna(amount) else 0.0
 
@@ -985,6 +993,15 @@ def derive_first_balance_opening(first_row: pd.Series) -> Optional[float]:
 
     if marker == "DB" and amount_value > 0:
         return balance_value + amount_value
+
+    credit = float(first_row.get("credit", 0) or 0)
+    debit = float(first_row.get("debit", 0) or 0)
+
+    if credit > 0:
+        return balance_value - credit
+
+    if debit > 0:
+        return balance_value + debit
 
     return balance_value + debit - credit
 
