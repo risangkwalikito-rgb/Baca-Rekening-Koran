@@ -147,8 +147,20 @@ def clean_account_id(value: object) -> str:
     return raw or "UNKNOWN"
 
 
+def normalize_account_key(value: object, length: int = 10) -> str:
+    cleaned = clean_account_id(value)
+    digits = re.sub(r"\D", "", str(cleaned))
+    if digits:
+        return digits[:length] if len(digits) >= length else digits
+
+    raw = normalize_spaces(str(cleaned or ""))
+    if not raw:
+        return "UNKNOWN"
+    return raw[:length]
+
+
 def display_account_id(value: object) -> str:
-    return str(clean_account_id(value))[:10]
+    return normalize_account_key(value)
 
 
 def format_currency(value: object) -> str:
@@ -1083,7 +1095,7 @@ def parse_master_accounts(master_text: str, selected_bank: str) -> pd.DataFrame:
         rows.append(
             {
                 "master_order": int(re.sub(r"\D", "", order_str) or len(rows) + 1),
-                "account_id": clean_account_id(account_id),
+                "account_id": normalize_account_key(account_id),
                 "bank": normalize_spaces(bank_name or selected_bank) or selected_bank,
                 "master_name": normalize_spaces(account_desc),
             }
@@ -1106,32 +1118,43 @@ def order_dataframe_by_master(
         return df
 
     result = df.copy()
-    result["_sort_account_id"] = result[rekening_col].astype(str).apply(clean_account_id)
+    result["_sort_account_id"] = result[rekening_col].astype(str).apply(normalize_account_key)
 
     if master_df is not None and not master_df.empty:
-        order_map = dict(zip(master_df["account_id"], master_df["master_order"]))
+        master_work = master_df.copy()
+        master_work["account_key"] = master_work["account_id"].apply(normalize_account_key)
+        master_work = master_work.drop_duplicates(subset=["account_key"], keep="first")
+
+        order_map = dict(zip(master_work["account_key"], master_work["master_order"]))
         result["_master_order"] = result["_sort_account_id"].map(order_map).fillna(999999).astype(int)
-        name_map = dict(zip(master_df["account_id"], master_df["master_name"]))
+
+        name_map = dict(zip(master_work["account_key"], master_work["master_name"]))
         if "Nama Rekening" in result.columns:
             result["Nama Rekening"] = result.apply(
                 lambda row: normalize_spaces(row["Nama Rekening"]) or name_map.get(row["_sort_account_id"], ""),
                 axis=1,
             )
+
         result = result.sort_values(["_master_order", "_sort_account_id"], kind="stable").reset_index(drop=True)
     else:
         result = result.sort_values(["_sort_account_id"], kind="stable").reset_index(drop=True)
 
     result[rekening_col] = result["_sort_account_id"].astype(str).str[:10]
-    return result.drop(columns=["_sort_account_id"] + ([ "_master_order"] if "_master_order" in result.columns else []))
+    drop_cols = ["_sort_account_id"]
+    if "_master_order" in result.columns:
+        drop_cols.append("_master_order")
+    return result.drop(columns=drop_cols)
 
 
 def build_summary_base(df: pd.DataFrame) -> pd.DataFrame:
     records: List[Dict[str, object]] = []
 
     if not df.empty:
-        grouped = df.groupby("account_id", dropna=False, sort=True)
+        working = df.copy()
+        working["_rekening_key"] = working["account_id"].apply(normalize_account_key)
+        grouped = working.groupby("_rekening_key", dropna=False, sort=True)
 
-        for account_id, group in grouped:
+        for rekening_key, group in grouped:
             group = group.sort_values(
                 by=["trx_date", "source_file", "source_sheet", "row_order"],
                 kind="stable",
@@ -1145,7 +1168,7 @@ def build_summary_base(df: pd.DataFrame) -> pd.DataFrame:
 
             records.append(
                 {
-                    "Rekening": clean_account_id(account_id),
+                    "Rekening": normalize_account_key(rekening_key),
                     "Nama Rekening": account_name,
                     "Saldo Awal": opening_balance,
                     "Debit": total_debit,
@@ -1179,7 +1202,7 @@ def build_summary(
     manifest_unique_rows: List[Dict[str, object]] = []
     if manifest_df is not None and not manifest_df.empty:
         manifest_unique = (
-            manifest_df[["account_id", "account_name"]]
+            manifest_df.assign(account_key=manifest_df["account_id"].apply(normalize_account_key))[["account_key", "account_name"]]
             .fillna("")
             .drop_duplicates()
             .reset_index(drop=True)
@@ -1187,7 +1210,7 @@ def build_summary(
         for _, row in manifest_unique.iterrows():
             manifest_unique_rows.append(
                 {
-                    "Rekening": clean_account_id(row["account_id"]),
+                    "Rekening": normalize_account_key(row["account_key"]),
                     "Nama Rekening": normalize_spaces(row["account_name"]),
                     "Saldo Awal": 0.0,
                     "Debit": 0.0,
@@ -1202,7 +1225,7 @@ def build_summary(
         for _, row in master_df.iterrows():
             master_rows.append(
                 {
-                    "Rekening": clean_account_id(row["account_id"]),
+                    "Rekening": normalize_account_key(row["account_id"]),
                     "Nama Rekening": normalize_spaces(row["master_name"]),
                     "Saldo Awal": 0.0,
                     "Debit": 0.0,
@@ -1212,14 +1235,13 @@ def build_summary(
                 }
             )
 
-    combined = pd.concat(
-        [
-            summary_df,
-            pd.DataFrame(manifest_unique_rows),
-            pd.DataFrame(master_rows),
-        ],
-        ignore_index=True,
-    )
+    frames = [summary_df]
+    if manifest_unique_rows:
+        frames.append(pd.DataFrame(manifest_unique_rows))
+    if master_rows:
+        frames.append(pd.DataFrame(master_rows))
+
+    combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
     if combined.empty:
         combined = pd.DataFrame(
@@ -1234,8 +1256,23 @@ def build_summary(
             ]
         )
     else:
+        combined["_rekening_key"] = combined["Rekening"].apply(normalize_account_key)
+
+        if master_df is not None and not master_df.empty:
+            name_map = {
+                normalize_account_key(row["account_id"]): normalize_spaces(row["master_name"])
+                for _, row in master_df.iterrows()
+            }
+        else:
+            name_map = {}
+
+        combined["Nama Rekening"] = combined.apply(
+            lambda row: normalize_spaces(row["Nama Rekening"]) or name_map.get(row["_rekening_key"], ""),
+            axis=1,
+        )
+
         combined = (
-            combined.groupby("Rekening", dropna=False, as_index=False)
+            combined.groupby("_rekening_key", dropna=False, as_index=False)
             .agg(
                 {
                     "Nama Rekening": "first",
@@ -1246,6 +1283,7 @@ def build_summary(
                     "Jumlah Transaksi": "max",
                 }
             )
+            .rename(columns={"_rekening_key": "Rekening"})
             .reset_index(drop=True)
         )
 
