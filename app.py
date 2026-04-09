@@ -989,6 +989,7 @@ def finalize_transactions(df: pd.DataFrame, deduplicate: bool) -> pd.DataFrame:
     return result
 
 
+
 def derive_opening_balance(group: pd.DataFrame) -> float:
     explicit = group["opening_balance_explicit"].dropna()
     if not explicit.empty:
@@ -1012,6 +1013,17 @@ def derive_closing_balance(group: pd.DataFrame, opening_balance: float) -> float
     return opening_balance + total_credit - total_debit
 
 
+def shorten_account_display(value: object) -> str:
+    return normalize_spaces(str(value or ""))[:10]
+
+
+def apply_account_display_format(df: pd.DataFrame) -> pd.DataFrame:
+    result = df.copy()
+    if "Rekening" in result.columns:
+        result["Rekening"] = result["Rekening"].apply(shorten_account_display)
+    return result
+
+
 def build_summary(df: pd.DataFrame, manifest_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
     records: List[Dict[str, object]] = []
 
@@ -1028,17 +1040,14 @@ def build_summary(df: pd.DataFrame, manifest_df: Optional[pd.DataFrame] = None) 
             total_debit = float(group["debit"].sum())
             total_credit = float(group["credit"].sum())
             closing_balance = derive_closing_balance(group, opening_balance)
-            account_name = first_non_empty(group["account_name"])
 
             records.append(
                 {
                     "Rekening": str(account_id),
-                    "Nama Rekening": account_name,
                     "Saldo Awal": opening_balance,
                     "Debit": total_debit,
                     "Kredit": total_credit,
                     "Saldo Akhir": closing_balance,
-                    "Jumlah Transaksi": len(group),
                 }
             )
 
@@ -1046,18 +1055,16 @@ def build_summary(df: pd.DataFrame, manifest_df: Optional[pd.DataFrame] = None) 
         records,
         columns=[
             "Rekening",
-            "Nama Rekening",
             "Saldo Awal",
             "Debit",
             "Kredit",
             "Saldo Akhir",
-            "Jumlah Transaksi",
         ],
     )
 
     if manifest_df is not None and not manifest_df.empty:
         manifest_unique = (
-            manifest_df[["account_id", "account_name"]]
+            manifest_df[["account_id"]]
             .fillna("")
             .drop_duplicates()
             .reset_index(drop=True)
@@ -1068,19 +1075,16 @@ def build_summary(df: pd.DataFrame, manifest_df: Optional[pd.DataFrame] = None) 
 
         for _, row in manifest_unique.iterrows():
             account_id = normalize_spaces(str(row["account_id"]))
-            account_name = normalize_spaces(str(row["account_name"]))
             if account_id in existing_accounts:
                 continue
 
             missing_rows.append(
                 {
                     "Rekening": account_id,
-                    "Nama Rekening": account_name,
                     "Saldo Awal": 0.0,
                     "Debit": 0.0,
                     "Kredit": 0.0,
                     "Saldo Akhir": 0.0,
-                    "Jumlah Transaksi": 0,
                 }
             )
 
@@ -1091,12 +1095,73 @@ def build_summary(df: pd.DataFrame, manifest_df: Optional[pd.DataFrame] = None) 
         summary_df = pd.DataFrame(
             columns=[
                 "Rekening",
-                "Nama Rekening",
                 "Saldo Awal",
                 "Debit",
                 "Kredit",
                 "Saldo Akhir",
-                "Jumlah Transaksi",
+            ]
+        )
+
+    summary_df = summary_df.sort_values(by="Rekening", kind="stable").reset_index(drop=True)
+    return summary_df
+
+
+def build_summary_for_date(detail_group: pd.DataFrame) -> pd.DataFrame:
+    if detail_group.empty:
+        return pd.DataFrame(
+            columns=[
+                "Rekening",
+                "Saldo Awal",
+                "Debit",
+                "Kredit",
+                "Saldo Akhir",
+            ]
+        )
+
+    working = detail_group.copy()
+    working["Debit"] = pd.to_numeric(working["Debit"], errors="coerce").fillna(0.0)
+    working["Kredit"] = pd.to_numeric(working["Kredit"], errors="coerce").fillna(0.0)
+    working["Saldo"] = pd.to_numeric(working["Saldo"], errors="coerce")
+
+    sort_columns = [col for col in ["Tanggal", "Rekening", "File", "Sheet"] if col in working.columns]
+    if sort_columns:
+        working = working.sort_values(sort_columns, kind="stable").reset_index(drop=True)
+
+    records: List[Dict[str, object]] = []
+
+    for rekening, group in working.groupby("Rekening", dropna=False, sort=True):
+        group = group.reset_index(drop=True)
+        total_debit = float(group["Debit"].sum())
+        total_credit = float(group["Kredit"].sum())
+
+        valid_balances = group[group["Saldo"].notna()].reset_index(drop=True)
+        if not valid_balances.empty:
+            first_row = valid_balances.iloc[0]
+            opening_balance = float(first_row["Saldo"]) + float(first_row["Debit"]) - float(first_row["Kredit"])
+            closing_balance = float(valid_balances.iloc[-1]["Saldo"])
+        else:
+            opening_balance = 0.0
+            closing_balance = opening_balance + total_credit - total_debit
+
+        records.append(
+            {
+                "Rekening": str(rekening),
+                "Saldo Awal": opening_balance,
+                "Debit": total_debit,
+                "Kredit": total_credit,
+                "Saldo Akhir": closing_balance,
+            }
+        )
+
+    summary_df = pd.DataFrame(records)
+    if summary_df.empty:
+        summary_df = pd.DataFrame(
+            columns=[
+                "Rekening",
+                "Saldo Awal",
+                "Debit",
+                "Kredit",
+                "Saldo Akhir",
             ]
         )
 
@@ -1105,7 +1170,7 @@ def build_summary(df: pd.DataFrame, manifest_df: Optional[pd.DataFrame] = None) 
 
 
 def make_display_copy(df: pd.DataFrame, money_columns: List[str]) -> pd.DataFrame:
-    display_df = df.copy()
+    display_df = apply_account_display_format(df)
     for col in money_columns:
         if col in display_df.columns:
             display_df[col] = display_df[col].apply(format_currency)
@@ -1185,16 +1250,17 @@ def build_excel_split_by_date(
         by=["File", "Sheet", "Rekening"],
         kind="stable",
     ).reset_index(drop=True)
+    status_export = apply_account_display_format(status_export)
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        summary_export = summary_df.copy()
+        summary_export = apply_account_display_format(summary_df.copy())
         summary_export.to_excel(
             writer,
             sheet_name=sanitize_sheet_name("Rekap", used_sheet_names),
             index=False,
         )
 
-        all_export = detail_export.copy()
+        all_export = apply_account_display_format(detail_export.copy())
         if "Tanggal" in all_export.columns:
             all_export["Tanggal"] = all_export["Tanggal"].dt.strftime("%Y-%m-%d")
 
@@ -1220,8 +1286,8 @@ def build_excel_split_by_date(
 
                 for trx_date, group in dated_rows.groupby(dated_rows["Tanggal"].dt.date, sort=True):
                     sheet_name = sanitize_sheet_name(str(trx_date), used_sheet_names)
-                    export_group = group.copy()
-                    export_group["Tanggal"] = export_group["Tanggal"].dt.strftime("%Y-%m-%d")
+                    export_group = build_summary_for_date(group)
+                    export_group = apply_account_display_format(export_group)
                     export_group.to_excel(writer, sheet_name=sheet_name, index=False)
 
         workbook = writer.book
