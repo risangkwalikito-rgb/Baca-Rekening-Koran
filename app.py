@@ -548,6 +548,68 @@ def standardize_dc(value: object) -> str:
     return ""
 
 
+def get_source_series_by_position(source_df: pd.DataFrame, target_index: pd.Index, position: int) -> pd.Series:
+    if source_df.shape[1] <= position:
+        return pd.Series(index=target_index, dtype="object")
+
+    series = source_df.iloc[:, position].copy()
+    series.index = source_df.index
+    return series.reindex(target_index)
+
+
+def apply_bank_specific_spreadsheet_fallbacks(
+    source_df: pd.DataFrame,
+    normalized_df: pd.DataFrame,
+) -> Tuple[pd.DataFrame, List[str]]:
+    result = normalized_df.copy()
+    notes: List[str] = []
+
+    if normalize_spaces(ACTIVE_BANK).upper() != "MANDIRI":
+        return result, notes
+
+    source_rows = source_df.dropna(axis=0, how="all").copy()
+    if source_rows.empty:
+        return result, notes
+
+    row_index = result.index
+
+    debit_values = get_source_series_by_position(source_rows, row_index, 9).apply(parse_amount)
+    credit_values = get_source_series_by_position(source_rows, row_index, 12).apply(parse_amount)
+    balance_values = get_source_series_by_position(source_rows, row_index, 15).apply(parse_amount)
+
+    if "debit" not in result.columns:
+        result["debit"] = None
+    if "credit" not in result.columns:
+        result["credit"] = None
+    if "balance" not in result.columns:
+        result["balance"] = None
+    if "amount" not in result.columns:
+        result["amount"] = None
+    if "dc" not in result.columns:
+        result["dc"] = ""
+
+    if debit_values.notna().any():
+        result.loc[debit_values.notna(), "debit"] = debit_values[debit_values.notna()]
+        notes.append("Mandiri: Debit dibaca dari kolom J")
+
+    if credit_values.notna().any():
+        result.loc[credit_values.notna(), "credit"] = credit_values[credit_values.notna()]
+        notes.append("Mandiri: Kredit dibaca dari kolom M")
+
+    if balance_values.notna().any():
+        result.loc[balance_values.notna(), "balance"] = balance_values[balance_values.notna()]
+        notes.append("Mandiri: Saldo dibaca dari kolom P")
+
+    if result["amount"].isna().all():
+        result["amount"] = credit_values.combine_first(debit_values)
+
+    empty_dc = result["dc"].fillna("").astype(str).str.strip().eq("")
+    result.loc[empty_dc & credit_values.notna() & credit_values.ne(0), "dc"] = "CR"
+    result.loc[empty_dc & debit_values.notna() & debit_values.ne(0), "dc"] = "DB"
+
+    return result, notes
+
+
 def first_non_empty(series: pd.Series) -> str:
     for value in series:
         text = normalize_spaces(value)
@@ -673,6 +735,9 @@ def convert_spreadsheet_to_transactions(
         if col not in df.columns:
             df[col] = default
 
+    df, bank_notes = apply_bank_specific_spreadsheet_fallbacks(raw_df, df)
+    notes.extend([f"{filename} [{sheet_name}]: {note}" for note in bank_notes])
+
     df["trx_date"] = df["trx_date"].apply(parse_date_value)
     df["description"] = df["description"].fillna("").astype(str).apply(normalize_spaces)
     df["account_id"] = df["account_id"].apply(clean_account_id)
@@ -683,6 +748,19 @@ def convert_spreadsheet_to_transactions(
     df["balance"] = df["balance"].apply(parse_amount)
     df["amount"] = df["amount"].apply(parse_amount)
     df["dc"] = df["dc"].apply(standardize_dc)
+
+    if df["amount"].isna().all():
+        inferred_amount = df["credit"].where(df["credit"].fillna(0) > 0, df["debit"])
+        df["amount"] = inferred_amount
+
+    df.loc[
+        df["dc"].eq("") & (df["credit"].fillna(0) > 0) & (df["debit"].fillna(0) == 0),
+        "dc",
+    ] = "CR"
+    df.loc[
+        df["dc"].eq("") & (df["debit"].fillna(0) > 0) & (df["credit"].fillna(0) == 0),
+        "dc",
+    ] = "DB"
 
     if df["amount"].notna().any():
         for idx, row in df.iterrows():
