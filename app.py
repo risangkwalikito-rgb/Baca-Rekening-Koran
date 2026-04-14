@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import uuid
 import re
 from collections import Counter
 from datetime import datetime
@@ -1729,11 +1730,25 @@ def main() -> None:
 
     master_df = parse_master_accounts(selected_bank)
 
-    uploaded_files = st.file_uploader(
-        "Pilih file mutasi / rekening koran",
-        type=["pdf", "csv", "xlsx", "xls"],
-        accept_multiple_files=True,
-    )
+    if "uploader_key" not in st.session_state:
+        st.session_state["uploader_key"] = f"uploader_{uuid.uuid4().hex}"
+
+    uploader_col, clear_col = st.columns([5, 1])
+
+    with uploader_col:
+        uploaded_files = st.file_uploader(
+            "Pilih file mutasi / rekening koran",
+            type=["pdf", "csv", "xlsx", "xls"],
+            accept_multiple_files=True,
+            key=st.session_state["uploader_key"],
+        )
+
+    with clear_col:
+        st.write("")
+        st.write("")
+        if st.button("Hapus uploader", use_container_width=True):
+            st.session_state["uploader_key"] = f"uploader_{uuid.uuid4().hex}"
+            st.rerun()
 
     if not uploaded_files:
         st.info("Upload file dulu untuk mulai proses.")
